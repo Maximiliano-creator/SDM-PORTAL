@@ -1,0 +1,31 @@
+{
+  "name": "sdm-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Portal de administración de balanzas SDM/BLS — frontend Vite+React + backend Express",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter=./apps/* run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "clean": "pnpm -r exec rimraf dist .turbo node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "argon2",
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

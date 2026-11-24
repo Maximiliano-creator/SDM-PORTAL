@@ -1,0 +1,45 @@
+import argon2 from 'argon2';
+import { db } from './client.js';
+import { logger } from '../logger.js';
+function rowToUser(row) {
+    return {
+        id: row.id,
+        username: row.username,
+        fullName: row.full_name,
+        role: row.role,
+        enabled: row.enabled === 1,
+        createdAt: row.created_at,
+        lastLoginAt: row.last_login_at,
+    };
+}
+export function findUserByUsername(username) {
+    const row = db
+        .prepare('SELECT * FROM users WHERE username = ? LIMIT 1')
+        .get(username);
+    if (!row)
+        return null;
+    return { user: rowToUser(row), passwordHash: row.password_hash };
+}
+export function findUserById(id) {
+    const row = db.prepare('SELECT * FROM users WHERE id = ? LIMIT 1').get(id);
+    return row ? rowToUser(row) : null;
+}
+export function recordLogin(id) {
+    db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(id);
+}
+export async function createUser(input) {
+    const hash = await argon2.hash(input.password, { type: argon2.argon2id });
+    const stmt = db.prepare('INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, ?) RETURNING *');
+    const row = stmt.get(input.username, hash, input.fullName ?? null, input.role ?? 'operator');
+    return rowToUser(row);
+}
+export async function ensureSeedAdmin() {
+    const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+    if (count > 0)
+        return;
+    const username = 'admin';
+    const password = 'admin';
+    await createUser({ username, password, fullName: 'Administrador', role: 'admin' });
+    logger.warn({ username, password }, 'Usuario admin inicial creado. CAMBIA LA CONTRASEÑA en el primer login.');
+}
+//# sourceMappingURL=users.js.map
