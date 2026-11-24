@@ -4,6 +4,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { getAllSettings, setSetting } from '../db/settings.js';
 import { invalidateUpstreamToken, pingTermAdmin } from '../upstream/termAdmin.js';
 import { db } from '../db/client.js';
+import { updateUserCredentials } from '../db/users.js';
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
 const SettingsUpdateSchema = z.object({
@@ -12,6 +13,8 @@ const SettingsUpdateSchema = z.object({
     'term_admin.password': z.string().min(1).max(256).optional(),
     'branding.app_name': z.string().min(1).max(64).optional(),
     'branding.primary': z.string().optional(),
+    'portal.username': z.string().min(3).max(64).regex(/^[a-zA-Z0-9._-]+$/).optional(),
+    'portal.password': z.string().min(8).max(256).optional(),
 });
 settingsRouter.get('/settings', (_req, res) => {
     const all = getAllSettings();
@@ -21,7 +24,7 @@ settingsRouter.get('/settings', (_req, res) => {
     }
     res.json({ ok: true, data: all });
 });
-settingsRouter.put('/settings', (req, res, next) => {
+settingsRouter.put('/settings', async (req, res, next) => {
     try {
         if (req.user?.role !== 'admin') {
             res
@@ -38,11 +41,34 @@ settingsRouter.put('/settings', (req, res, next) => {
             return;
         }
         const changed = [];
+        const portalUsername = parsed.data['portal.username'];
+        const portalPassword = parsed.data['portal.password'];
         for (const [key, value] of Object.entries(parsed.data)) {
+            if (key === 'portal.username' || key === 'portal.password')
+                continue;
             if (value === undefined || value === '••••••••')
                 continue;
             setSetting(key, value);
             changed.push(key);
+        }
+        if (portalUsername || portalPassword) {
+            try {
+                await updateUserCredentials(req.user.sub, {
+                    username: portalUsername,
+                    password: portalPassword,
+                });
+            }
+            catch (err) {
+                if (String(err.code).includes('SQLITE_CONSTRAINT')) {
+                    res.status(409).json({
+                        ok: false,
+                        error: { code: 'USERNAME_EXISTS', message: 'Ese nombre de usuario ya existe' },
+                    });
+                    return;
+                }
+                throw err;
+            }
+            changed.push(...[portalUsername ? 'portal.username' : null, portalPassword ? 'portal.password' : null].filter(Boolean));
         }
         if (changed.some((k) => k.startsWith('term_admin.'))) {
             invalidateUpstreamToken();

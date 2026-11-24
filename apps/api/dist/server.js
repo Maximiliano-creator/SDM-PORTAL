@@ -11,6 +11,7 @@ import { scalesRouter } from './routes/scales.js';
 import { storesRouter } from './routes/stores.js';
 import { settingsRouter } from './routes/settings.js';
 import { productsRouter } from './routes/products.js';
+import { productGroupsRouter } from './routes/productGroups.js';
 import path from 'node:path';
 import { importRouter } from './routes/import.js';
 import { imagesRouter } from './routes/images.js';
@@ -60,6 +61,7 @@ async function main() {
     app.use('/api', storesRouter);
     app.use('/api', settingsRouter);
     app.use('/api', productsRouter);
+    app.use('/api', productGroupsRouter);
     app.use('/api', importRouter);
     app.use('/api', imagesRouter);
     app.use('/api', reportsRouter);

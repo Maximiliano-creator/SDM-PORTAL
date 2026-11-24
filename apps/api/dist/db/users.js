@@ -33,6 +33,35 @@ export async function createUser(input) {
     const row = stmt.get(input.username, hash, input.fullName ?? null, input.role ?? 'operator');
     return rowToUser(row);
 }
+export async function updateUserCredentials(id, input) {
+    if (!input.username && !input.password) {
+        const user = findUserById(id);
+        if (!user)
+            throw new Error('Usuario no encontrado');
+        return user;
+    }
+    let row;
+    if (input.username && input.password) {
+        const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
+        row = db
+            .prepare('UPDATE users SET username = ?, password_hash = ? WHERE id = ? RETURNING *')
+            .get(input.username, passwordHash, id);
+    }
+    else if (input.username) {
+        row = db
+            .prepare('UPDATE users SET username = ? WHERE id = ? RETURNING *')
+            .get(input.username, id);
+    }
+    else {
+        const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
+        row = db
+            .prepare('UPDATE users SET password_hash = ? WHERE id = ? RETURNING *')
+            .get(passwordHash, id);
+    }
+    if (!row)
+        throw new Error('Usuario no encontrado');
+    return rowToUser(row);
+}
 export async function ensureSeedAdmin() {
     const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
     if (count > 0)

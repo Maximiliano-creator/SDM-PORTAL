@@ -17,6 +17,8 @@ import { useAuthStore } from '@/store/auth';
 import { apiClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { OfflineBanner } from './OfflineBanner';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: Gauge, end: true },
@@ -33,6 +35,19 @@ export function Layout() {
   const user = useAuthStore((s) => s.user);
   const clear = useAuthStore((s) => s.clear);
   const navigate = useNavigate();
+  const brandingQuery = useQuery({
+    queryKey: ['branding'],
+    queryFn: async () => {
+      const r = await apiClient.branding();
+      if (!r.ok) throw new Error(r.error.message);
+      return r.data;
+    },
+  });
+  const appName = brandingQuery.data?.appName ?? 'SDM Portal';
+
+  useEffect(() => {
+    document.title = appName;
+  }, [appName]);
 
   async function handleLogout() {
     await apiClient.logout();
@@ -46,7 +61,7 @@ export function Layout() {
       <aside className="flex flex-col border-r bg-card">
         <div className="flex h-16 items-center gap-2 border-b px-6">
           <Boxes className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold">SDM Portal</span>
+          <span className="text-lg font-semibold">{appName}</span>
         </div>
         <nav className="flex-1 space-y-1 p-3">
           {navItems.map((item) => (

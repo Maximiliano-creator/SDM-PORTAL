@@ -10,11 +10,26 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthStore } from '@/store/auth';
 import { apiClient } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 
 export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const setSession = useAuthStore((s) => s.setSession);
+  const brandingQuery = useQuery({
+    queryKey: ['branding'],
+    queryFn: async () => {
+      const r = await apiClient.branding();
+      if (!r.ok) throw new Error(r.error.message);
+      return r.data;
+    },
+  });
+  const appName = brandingQuery.data?.appName ?? 'SDM Portal';
+
+  useEffect(() => {
+    document.title = appName;
+  }, [appName]);
 
   const form = useForm<LoginRequest>({
     resolver: zodResolver(LoginRequestSchema),
@@ -38,7 +53,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">SDM Portal</CardTitle>
+          <CardTitle className="text-2xl">{appName}</CardTitle>
           <CardDescription>Iniciá sesión para administrar tus balanzas.</CardDescription>
         </CardHeader>
         <CardContent>

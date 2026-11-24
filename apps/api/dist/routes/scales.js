@@ -7,6 +7,7 @@ import { getSetting } from '../db/settings.js';
 import { isFresh, serveWithMirror } from './helpers/mirrorServe.js';
 import { db } from '../db/client.js';
 import { isValidIp } from '../upstream/websockify.js';
+import { normalizeDistributionTypes } from '../upstream/distribution.js';
 export const scalesRouter = Router();
 scalesRouter.use(requireAuth);
 const DistributeDataSchema = z.object({
@@ -252,7 +253,7 @@ scalesRouter.put('/scales/:id', async (req, res, next) => {
         let distributeResult = null;
         let distributed = false;
         if (distributeImmediately) {
-            const types = Array.isArray(typeList) && typeList.length > 0 ? typeList : [0, 1, 2];
+            const types = normalizeDistributionTypes(Array.isArray(typeList) && typeList.length > 0 ? typeList : [0, 1, 2]);
             try {
                 distributeResult = await termRequest('/api/termInfo/distributeData', {
                     method: 'POST',
@@ -355,7 +356,7 @@ scalesRouter.post('/scales/distribute', async (req, res, next) => {
         const payload = {
             shopId: parsed.data.shopId ?? -1,
             targetTermIdList: parsed.data.targetTermIdList,
-            typeList: [...new Set(parsed.data.typeList)].sort((a, b) => a - b),
+            typeList: normalizeDistributionTypes(parsed.data.typeList),
         };
         const upstreamResult = await termRequest('/api/termInfo/distributeData', {
             method: 'POST',

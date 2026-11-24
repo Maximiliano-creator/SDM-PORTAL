@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/queryClient';
+import { useAuthStore } from '@/store/auth';
 
 interface FormValues {
   'term_admin.url': string;
@@ -19,6 +21,8 @@ interface FormValues {
 
 export function SettingsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const clearAuth = useAuthStore((s) => s.clear);
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: async () => {
@@ -36,6 +40,23 @@ export function SettingsPage() {
       'branding.app_name': settingsQuery.data?.['branding.app_name'] ?? 'SDM Portal',
     },
   });
+
+  const meQuery = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const r = await apiClient.me();
+      if (!r.ok) throw new Error(r.error.message);
+      return r.data;
+    },
+  });
+
+  const [portalUsername, setPortalUsername] = useState('');
+  const [portalPassword, setPortalPassword] = useState('');
+  const [portalPasswordConfirm, setPortalPasswordConfirm] = useState('');
+
+  useEffect(() => {
+    if (meQuery.data?.username) setPortalUsername(meQuery.data.username);
+  }, [meQuery.data?.username]);
 
   const save = useMutation({
     mutationFn: async (values: FormValues) => {
@@ -59,6 +80,47 @@ export function SettingsPage() {
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const saveBrand = useMutation({
+    mutationFn: async () => {
+      const appName = String(form.watch('branding.app_name') ?? '').trim();
+      if (!appName) throw new Error('El nombre de la app no puede estar vacío');
+      const r = await apiClient.saveSettings({ 'branding.app_name': appName });
+      if (!r.ok) throw new Error(r.error.message);
+      return r.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.invalidateQueries({ queryKey: ['branding'] });
+      toast.success('Nombre de la app actualizado');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const savePortalCredentials = useMutation({
+    mutationFn: async () => {
+      if (portalUsername.length < 3) throw new Error('El usuario debe tener al menos 3 caracteres');
+      if (portalPassword && portalPassword.length < 8) {
+        throw new Error('La contraseña debe tener al menos 8 caracteres');
+      }
+      if (portalPassword !== portalPasswordConfirm) {
+        throw new Error('Las contraseñas no coinciden');
+      }
+      const payload: Partial<FormValues> & Record<string, string> = {
+        'portal.username': portalUsername,
+      };
+      if (portalPassword) payload['portal.password'] = portalPassword;
+      const r = await apiClient.saveSettings(payload);
+      if (!r.ok) throw new Error(r.error.message);
+      return r.data;
+    },
+    onSuccess: () => {
+      toast.success('Credenciales locales actualizadas');
+      clearAuth();
+      navigate('/login', { replace: true });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   async function handleTest() {
     setTesting(true);
@@ -142,9 +204,66 @@ export function SettingsPage() {
           <CardDescription>Nombre visible de la app (white-label).</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
+          <div className="space-y-4">
+            <div className="space-y-2">
             <Label htmlFor="appname">Nombre de la app</Label>
             <Input id="appname" {...form.register('branding.app_name')} />
+            </div>
+            <Button type="button" onClick={() => saveBrand.mutate()} disabled={saveBrand.isPending}>
+              {saveBrand.isPending ? 'Guardando…' : 'Guardar nombre'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Acceso al panel SDM-PORTAL</CardTitle>
+          <CardDescription>
+            Cambia las credenciales locales. No modifica usuarios ni contraseñas de term_admin.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="portal-user">Usuario del panel</Label>
+              <Input
+                id="portal-user"
+                autoComplete="username"
+                value={portalUsername}
+                onChange={(e) => setPortalUsername(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="portal-password">Nueva contraseña</Label>
+                <Input
+                  id="portal-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={portalPassword}
+                  onChange={(e) => setPortalPassword(e.target.value)}
+                  placeholder="Dejar vacío para no cambiar"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="portal-password-confirm">Confirmar contraseña</Label>
+                <Input
+                  id="portal-password-confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  value={portalPasswordConfirm}
+                  onChange={(e) => setPortalPasswordConfirm(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button
+              type="button"
+              onClick={() => savePortalCredentials.mutate()}
+              disabled={savePortalCredentials.isPending}
+            >
+              {savePortalCredentials.isPending ? 'Guardando…' : 'Guardar credenciales'}
+            </Button>
           </div>
         </CardContent>
       </Card>

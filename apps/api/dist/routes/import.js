@@ -4,6 +4,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { logger } from '../logger.js';
 import { db } from '../db/client.js';
+import { createShopGoodGroup, listShopGoodGroups, listShopProducts, normalizeProductGroupName, } from '../upstream/productGroups.js';
 export const importRouter = Router();
 importRouter.use(requireAuth);
 const ImportItemSchema = z.object({
@@ -40,25 +41,6 @@ async function lookupShopId(shopCode) {
         return ext.deleteFlag !== 1 && ext.shopStatus !== false;
     });
     return active.find((s) => s.shopCode === shopCode)?.shopId ?? null;
-}
-async function listExistingPlus(shopId) {
-    const existingPlus = new Set();
-    const PAGE_SIZE = 200;
-    let page = 0;
-    while (true) {
-        const res = await termRequest('/api/shopGoodsInfo', {
-            query: { page, size: PAGE_SIZE, shopId },
-        });
-        for (const p of res.content) {
-            if (p.shopId === shopId && p.goodsPlu) {
-                existingPlus.add(String(p.goodsPlu).trim());
-            }
-        }
-        if (res.last || res.content.length < PAGE_SIZE)
-            break;
-        page++;
-    }
-    return existingPlus;
 }
 async function runWithConcurrency(items, limit, worker) {
     let cursor = 0;
@@ -110,21 +92,48 @@ importRouter.post('/import/products', async (req, res, next) => {
             uniqueItems.push({ item: { ...it, goodsPlu: normalizedPlu }, originalRow: idx + 1 });
         });
         // 2. Consultar PLUs existentes en la tienda y filtrar solo los realmente nuevos
-        const existingPlus = await listExistingPlus(shopId);
+        const existingProducts = new Map((await listShopProducts(shopId))
+            .filter((product) => product.goodsPlu)
+            .map((product) => [String(product.goodsPlu).trim(), product]));
         const newItems = [];
         let skippedExisting = 0;
         for (const entry of uniqueItems) {
-            if (existingPlus.has(entry.item.goodsPlu)) {
+            if (existingProducts.has(entry.item.goodsPlu)) {
                 skippedExisting++;
             }
             else {
                 newItems.push(entry);
             }
         }
+        const departments = new Map();
+        for (const entry of uniqueItems) {
+            const name = entry.item.deptCode?.trim().replace(/\s+/g, ' ');
+            if (!name)
+                continue;
+            const key = normalizeProductGroupName(name);
+            const department = departments.get(key) ?? { name, rows: [] };
+            department.rows.push(entry);
+            departments.set(key, department);
+        }
+        const groupsByDepartment = new Map();
+        let rootGroupCount = 0;
+        let groupsCreated = 0;
+        if (departments.size > 0) {
+            const groups = await listShopGoodGroups(shopId);
+            for (const group of groups) {
+                if (group.pid !== 0)
+                    continue;
+                rootGroupCount++;
+                const key = normalizeProductGroupName(group.groupName);
+                if (!groupsByDepartment.has(key))
+                    groupsByDepartment.set(key, group);
+            }
+        }
         let created = 0;
         const updated = 0;
         let failed = 0;
         const errors = [];
+        const createdGoodCodes = new Map();
         // 3. Crear únicamente productos nuevos en term_admin (sin actualizar precios existentes)
         await runWithConcurrency(newItems, CONCURRENCY, async ({ item: it, originalRow }) => {
             const targetShopCode = it.shopCode || shopCode;
@@ -152,7 +161,13 @@ importRouter.post('/import/products', async (req, res, next) => {
                 downTermEnabled: 1,
             };
             try {
-                await termRequest('/api/shopGoodsInfo', { method: 'POST', body: base });
+                const product = await termRequest('/api/shopGoodsInfo', {
+                    method: 'POST',
+                    body: base,
+                });
+                if (typeof product?.goodCode === 'string' && product.goodCode.trim()) {
+                    createdGoodCodes.set(it.goodsPlu, product.goodCode.trim());
+                }
                 created++;
             }
             catch (e) {
@@ -162,7 +177,83 @@ importRouter.post('/import/products', async (req, res, next) => {
                 logger.warn({ row: originalRow, plu: it.goodsPlu, error: msg }, 'New item import failed');
             }
         });
-        db.prepare("INSERT INTO audit_log (user_id, action, target, ip, payload) VALUES (?, 'IMPORT_PRODUCTS', ?, ?, ?)").run(req.user.sub, shopCode, req.ip ?? null, JSON.stringify({ mode, total: items.length, created, updated, skippedExisting, skippedDuplicate, failed }));
+        const groupingErrors = [];
+        let groupingFailed = 0;
+        let associated = 0;
+        for (const [key, department] of departments) {
+            const eligibleRows = department.rows.filter(({ item }) => existingProducts.has(item.goodsPlu) || createdGoodCodes.has(item.goodsPlu));
+            if (eligibleRows.length === 0)
+                continue;
+            let group = groupsByDepartment.get(key);
+            if (!group) {
+                try {
+                    group = await createShopGoodGroup(shopId, department.name, rootGroupCount + groupsCreated);
+                    groupsByDepartment.set(key, group);
+                    groupsCreated++;
+                }
+                catch (e) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    groupingFailed += eligibleRows.length;
+                    groupingErrors.push({
+                        department: department.name,
+                        pluCount: eligibleRows.length,
+                        error: message,
+                    });
+                    logger.warn({ shopId, department: department.name, error: message }, 'Department group creation failed');
+                    continue;
+                }
+            }
+            const goodCodeList = new Set();
+            for (const { item } of eligibleRows) {
+                const goodCode = existingProducts.get(item.goodsPlu)?.goodCode ?? createdGoodCodes.get(item.goodsPlu);
+                if (typeof goodCode !== 'string' || !goodCode.trim()) {
+                    groupingFailed++;
+                    groupingErrors.push({
+                        department: department.name,
+                        plu: item.goodsPlu,
+                        error: 'term_admin no devolvió goodCode; no se pudo asociar el PLU al grupo',
+                    });
+                    continue;
+                }
+                goodCodeList.add(goodCode.trim());
+            }
+            if (goodCodeList.size === 0)
+                continue;
+            try {
+                await termRequest('/api/shopGoodGroupRlt/createBatch', {
+                    method: 'POST',
+                    body: {
+                        shopId,
+                        groupId: group.id,
+                        subgroupId: 0,
+                        goodCodeList: [...goodCodeList],
+                    },
+                });
+                associated += goodCodeList.size;
+            }
+            catch (e) {
+                const message = e instanceof Error ? e.message : String(e);
+                groupingFailed += goodCodeList.size;
+                groupingErrors.push({
+                    department: department.name,
+                    pluCount: goodCodeList.size,
+                    error: message,
+                });
+                logger.warn({ shopId, department: department.name, pluCount: goodCodeList.size, error: message }, 'Department group association failed');
+            }
+        }
+        db.prepare("INSERT INTO audit_log (user_id, action, target, ip, payload) VALUES (?, 'IMPORT_PRODUCTS', ?, ?, ?)").run(req.user.sub, shopCode, req.ip ?? null, JSON.stringify({
+            mode,
+            total: items.length,
+            created,
+            updated,
+            skippedExisting,
+            skippedDuplicate,
+            failed,
+            groupsCreated,
+            associated,
+            groupingFailed,
+        }));
         res.json({
             ok: true,
             data: {
@@ -174,6 +265,12 @@ importRouter.post('/import/products', async (req, res, next) => {
                 skippedExisting,
                 skippedDuplicate,
                 failed,
+                grouping: {
+                    groupsCreated,
+                    associated,
+                    failed: groupingFailed,
+                    errors: groupingErrors,
+                },
                 success: created,
                 errors,
             },

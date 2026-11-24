@@ -177,6 +177,10 @@ export class ApiClient {
     return this.request<AuthSession>('POST', '/api/auth/login', body);
   }
 
+  branding() {
+    return this.request<{ appName: string }>('GET', '/api/auth/branding');
+  }
+
   me() {
     return this.request<User>('GET', '/api/auth/me');
   }

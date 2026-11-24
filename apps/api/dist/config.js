@@ -13,7 +13,7 @@ const ConfigSchema = z.object({
     dbPath: z.string().default('./data/app.db'),
     termAdminUrl: z.string().url().default('http://localhost:19697'),
     termAdminUsername: z.string().default('admin'),
-    termAdminPassword: z.string().default('admin123'),
+    termAdminPassword: z.string().default('123456'),
     corsOrigin: z.string().default('http://localhost:5173'),
 });
 function resolveJwtSecret(dbPath) {

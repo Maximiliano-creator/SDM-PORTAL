@@ -6,8 +6,16 @@ import { signToken } from './jwt.js';
 import { requireAuth } from './middleware.js';
 import { logger } from '../logger.js';
 import { db } from '../db/client.js';
+import { getSetting } from '../db/settings.js';
 
 export const authRouter: Router = Router();
+
+authRouter.get('/branding', (_req: Request, res: Response) => {
+  res.json({
+    ok: true,
+    data: { appName: getSetting('branding.app_name') || 'SDM Portal' },
+  });
+});
 
 authRouter.post('/login', async (req: Request, res: Response) => {
   const parsed = LoginRequestSchema.safeParse(req.body);

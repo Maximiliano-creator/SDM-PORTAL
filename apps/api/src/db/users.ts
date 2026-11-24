@@ -62,6 +62,42 @@ export async function createUser(input: {
   return rowToUser(row);
 }
 
+export async function updateUserCredentials(
+  id: number,
+  input: { username?: string; password?: string },
+): Promise<User> {
+  if (!input.username && !input.password) {
+    const user = findUserById(id);
+    if (!user) throw new Error('Usuario no encontrado');
+    return user;
+  }
+
+  let row: UserRow | undefined;
+  if (input.username && input.password) {
+    const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
+    row = db
+      .prepare<[string, string, number], UserRow>(
+        'UPDATE users SET username = ?, password_hash = ? WHERE id = ? RETURNING *',
+      )
+      .get(input.username, passwordHash, id);
+  } else if (input.username) {
+    row = db
+      .prepare<[string, number], UserRow>(
+        'UPDATE users SET username = ? WHERE id = ? RETURNING *',
+      )
+      .get(input.username, id);
+  } else {
+    const passwordHash = await argon2.hash(input.password!, { type: argon2.argon2id });
+    row = db
+      .prepare<[string, number], UserRow>(
+        'UPDATE users SET password_hash = ? WHERE id = ? RETURNING *',
+      )
+      .get(passwordHash, id);
+  }
+  if (!row) throw new Error('Usuario no encontrado');
+  return rowToUser(row);
+}
+
 export async function ensureSeedAdmin(): Promise<void> {
   const count = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
   if (count > 0) return;

@@ -10,6 +10,7 @@ import { lookupShopId, upsertProducts } from '../erp/upserter.js';
 import { db } from '../db/client.js';
 import { logger } from '../logger.js';
 import { termRequest } from '../upstream/termAdmin.js';
+import { normalizeDistributionTypes } from '../upstream/distribution.js';
 // =================== Public push (API key) ===================
 // Se exporta aparte para montarlo ANTES del body-parser global de 4 MB
 // y de los routers que usan requireAuth.
@@ -185,7 +186,7 @@ const ErpDistributeSchema = z.object({
     targetTermIdList: z.array(z.number().int()).min(1, 'Debes indicar al menos un termId en targetTermIdList'),
     typeList: z
         .array(z.union([z.literal(0), z.literal(1), z.literal(2)]))
-        .min(1, 'Debes indicar al menos un tipo de dato en typeList (0=PLUs, 1=Etiquetas, 2=Config)'),
+        .min(1, 'Debes indicar al menos un tipo de dato en typeList (0=PLUs, 1=Agrupación, 2=Imágenes)'),
 });
 erpPublicRouter.get('/scales', requireApiKey, async (_req, res, next) => {
     try {
@@ -213,7 +214,7 @@ erpPublicRouter.post('/scales/distribute', requireApiKey, async (req, res, next)
         const payload = {
             shopId: parsed.data.shopId ?? -1,
             targetTermIdList: parsed.data.targetTermIdList,
-            typeList: [...new Set(parsed.data.typeList)].sort((a, b) => a - b),
+            typeList: normalizeDistributionTypes(parsed.data.typeList),
         };
         const upstreamResult = await termRequest('/api/termInfo/distributeData', {
             method: 'POST',
@@ -457,7 +458,7 @@ erpPublicRouter.get('/openapi.json', (_req, res) => {
                 get: { summary: 'Lista balanzas registradas' },
             },
             '/scales/distribute': {
-                post: { summary: 'Transmite datos directamente a las balanzas (typeList: 0=PLUs, 1=Etiquetas, 2=Config)' },
+                post: { summary: 'Transmite datos directamente a las balanzas (typeList: 0=PLUs, 1=Agrupación, 2=Imágenes)' },
             },
             '/shops': {
                 get: { summary: 'Lista sucursales activas y sus códigos' },
