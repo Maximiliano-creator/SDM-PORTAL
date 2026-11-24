@@ -117,4 +117,5 @@ URLs por defecto:
 - `docs/INSTALL.md` — Despliegue en cliente
 - `docs/ARCHITECTURE.md` — Diagrama y decisiones técnicas
 - `docs/ERP-INTEGRATION.md` — Cómo integrar ERPs
-- `C:\sdm\API.md` — Referencia de endpoints del backend BLS
+- `C:\sdm\API.md` — Referencia de endpoints del backend BLS#   S D M - P O R T A L  
+ 
