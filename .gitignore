@@ -1,3 +1,4 @@
 node_modules
 apps/api/data/app.db
 apps/api/data/app.db-wal
+.gitconfig
