@@ -7,6 +7,5 @@ CREATE TABLE IF NOT EXISTS app_settings (
 INSERT OR IGNORE INTO app_settings (key, value) VALUES
   ('term_admin.url',      'http://localhost:19697'),
   ('term_admin.username', 'admin'),
-  ('term_admin.password', 'admin123'),
   ('branding.app_name',   'SDM Portal'),
   ('branding.primary',    '217 91% 45%');

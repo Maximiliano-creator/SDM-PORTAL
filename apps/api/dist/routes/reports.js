@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { OrderFiltersSchema, } from '@sdm/shared';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { db } from '../db/client.js';
 export const reportsRouter = Router();
@@ -123,7 +123,7 @@ reportsRouter.get('/stats/daily', async (req, res, next) => {
         next(err);
     }
 });
-reportsRouter.get('/audit', async (req, res, next) => {
+reportsRouter.get('/audit', requireAdmin, async (req, res, next) => {
     try {
         const limit = Math.min(Number(req.query.limit ?? 100), 500);
         const rows = db

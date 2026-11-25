@@ -133,21 +133,31 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
   onUnauthorized = handler;
 }
 
-export class ApiClient {
-  constructor(private readonly getToken: () => string | null) {}
+function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const cookie = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('sdm_csrf='));
+  return cookie?.slice('sdm_csrf='.length) ?? null;
+}
 
+export class ApiClient {
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
   ): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    const token = this.getToken();
-    if (token) headers.authorization = `Bearer ${token}`;
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) {
+      const csrfToken = getCsrfToken();
+      if (csrfToken) headers['x-csrf-token'] = csrfToken;
+    }
 
     const res = await fetch(path, {
       method,
       headers,
+      credentials: 'same-origin',
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     let json: ApiResponse<T>;
@@ -365,6 +375,7 @@ export class ApiClient {
         id: number;
         name: string;
         key_prefix: string;
+        can_distribute: number;
         enabled: number;
         created_at: string;
         created_by: number | null;
@@ -373,20 +384,22 @@ export class ApiClient {
     >('GET', '/api/erp/keys');
   }
 
-  createErpKey(name: string) {
+  createErpKey(name: string, canDistribute = false) {
     return this.request<{
       id: number;
       name: string;
       key: string;
       prefix: string;
       createdAt: string;
-    }>('POST', '/api/erp/keys', { name });
+    }>('POST', '/api/erp/keys', { name, canDistribute });
   }
 
-  toggleErpKey(id: number, enabled: boolean) {
-    return this.request<{ id: number; enabled: boolean }>('PATCH', `/api/erp/keys/${id}`, {
-      enabled,
-    });
+  toggleErpKey(id: number, changes: { enabled?: boolean; canDistribute?: boolean }) {
+    return this.request<{ id: number; enabled?: boolean; canDistribute?: boolean }>(
+      'PATCH',
+      `/api/erp/keys/${id}`,
+      changes,
+    );
   }
 
   deleteErpKey(id: number) {

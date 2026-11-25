@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest, UpstreamError } from '../upstream/termAdmin.js';
 import { getMirrorScales, getMirrorShops, upsertScales, upsertShops } from '../db/mirror.js';
 import { getSetting } from '../db/settings.js';
@@ -118,7 +118,7 @@ scalesRouter.get('/scales/:id', async (req, res, next) => {
         next(err);
     }
 });
-scalesRouter.post('/scales', async (req, res, next) => {
+scalesRouter.post('/scales', requireAdmin, async (req, res, next) => {
     try {
         const parsed = ScaleUpsertSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -132,7 +132,7 @@ scalesRouter.post('/scales', async (req, res, next) => {
             });
             return;
         }
-        const { distributeImmediately, typeList, ...scaleUpdates } = parsed.data;
+        const scaleUpdates = parsed.data;
         // term_admin crea la balanza a partir de la entidad `TermInfo`. Las columnas
         // NOT NULL que el servicio no calcula se completan acá.
         const payload = {
@@ -169,7 +169,7 @@ scalesRouter.post('/scales', async (req, res, next) => {
         next(err);
     }
 });
-scalesRouter.put('/scales/:id', async (req, res, next) => {
+scalesRouter.put('/scales/:id', requireAdmin, async (req, res, next) => {
     try {
         const termId = Number(req.params.id);
         if (!Number.isFinite(termId)) {
@@ -287,7 +287,7 @@ scalesRouter.put('/scales/:id', async (req, res, next) => {
         next(err);
     }
 });
-scalesRouter.delete('/scales/:id', async (req, res, next) => {
+scalesRouter.delete('/scales/:id', requireAdmin, async (req, res, next) => {
     try {
         const termId = Number(req.params.id);
         // term_admin borra con DELETE /api/termInfo y el id en el body como array.
@@ -302,7 +302,7 @@ scalesRouter.delete('/scales/:id', async (req, res, next) => {
         next(err);
     }
 });
-scalesRouter.post('/scales/discover', async (req, res, next) => {
+scalesRouter.post('/scales/discover', requireAdmin, async (req, res, next) => {
     try {
         const parsed = DiscoverSchema.safeParse(req.body ?? {});
         if (!parsed.success) {
@@ -339,7 +339,7 @@ scalesRouter.post('/scales/discover', async (req, res, next) => {
         next(err);
     }
 });
-scalesRouter.post('/scales/distribute', async (req, res, next) => {
+scalesRouter.post('/scales/distribute', requireAdmin, async (req, res, next) => {
     try {
         const parsed = DistributeDataSchema.safeParse(req.body);
         if (!parsed.success) {

@@ -16,7 +16,7 @@ export const queryClient = new QueryClient({
   },
 });
 
-export const apiClient = new ApiClient(() => useAuthStore.getState().token);
+export const apiClient = new ApiClient();
 
 let redirected = false;
 setUnauthorizedHandler(() => {

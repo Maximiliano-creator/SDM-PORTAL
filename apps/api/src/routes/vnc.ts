@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { getMirrorScales, upsertScales } from '../db/mirror.js';
 import { ensureTokenForIp, isTokenRegistered, isValidIp } from '../upstream/websockify.js';
@@ -72,7 +72,7 @@ async function registerWithTermAdmin(
   }
 }
 
-vncRouter.post('/vnc/:termId/ticket', async (req: Request, res: Response, next: NextFunction) => {
+vncRouter.post('/vnc/:termId/ticket', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const termId = Number(req.params.termId);
     if (!Number.isFinite(termId)) {
@@ -198,7 +198,7 @@ const recentSessions = db.prepare(`
   LIMIT ?
 `);
 
-vncRouter.get('/vnc/sessions', (req: Request, res: Response) => {
+vncRouter.get('/vnc/sessions', requireAdmin, (req: Request, res: Response) => {
   const limit = Math.min(Number(req.query.limit) || 50, 500);
   const rows = recentSessions.all(limit);
   res.json({ ok: true, data: rows });

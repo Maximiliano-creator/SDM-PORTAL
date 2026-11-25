@@ -10,7 +10,11 @@ import { termRequest } from '../upstream/termAdmin.js';
 import { logger } from '../logger.js';
 import { getVncPortForScale } from '../db/settings.js';
 import { probeTcp } from '../vnc/probe.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
+import { getMirrorScales } from '../db/mirror.js';
+import { isValidIp } from '../upstream/websockify.js';
 const router = Router();
+router.use(requireAuth, requireAdmin);
 /**
  * GET /service/api/term-admin/novnc
  * Query params: ip, shopId, termId (opcional), port (opcional)
@@ -22,7 +26,23 @@ router.get('/novnc', async (req, res) => {
         return res.status(400).json({ ok: false, error: { code: 'BAD_REQUEST', message: 'Falta ip o shopId' } });
     }
     const termIdNum = Number(termId);
-    const resolvedPort = port ? Number(port) : Number.isFinite(termIdNum) ? getVncPortForScale(termIdNum) : 5900;
+    const shopIdNum = Number(shopId);
+    const resolvedPort = port ? Number(port) : getVncPortForScale(termIdNum);
+    const scale = getMirrorScales().data.find((candidate) => candidate.termId === termIdNum &&
+        candidate.shopId === shopIdNum &&
+        candidate.ipAddress === ip);
+    if (!isValidIp(ip) ||
+        !Number.isSafeInteger(termIdNum) ||
+        !Number.isSafeInteger(shopIdNum) ||
+        !Number.isInteger(resolvedPort) ||
+        resolvedPort < 1 ||
+        resolvedPort > 65535 ||
+        !scale) {
+        return res.status(400).json({
+            ok: false,
+            error: { code: 'BAD_REQUEST', message: 'La balanza, tienda o puerto no son válidos.' },
+        });
+    }
     try {
         // Ruta real: POST /api/sysConfig/getNovncAddress (no /service/service/...).
         const address = await termRequest('/api/sysConfig/getNovncAddress', {

@@ -63,7 +63,7 @@ export function SettingsPage() {
       const payload: Partial<FormValues> = {};
       // No mandar password si quedó como bullets (no la cambió)
       for (const [k, v] of Object.entries(values) as [keyof FormValues, string][]) {
-        if (k === 'term_admin.password' && v === '••••••••') continue;
+        if (k === 'term_admin.password' && (!v || v === '••••••••')) continue;
         payload[k] = v;
       }
       const r = await apiClient.saveSettings(payload);
@@ -100,8 +100,8 @@ export function SettingsPage() {
   const savePortalCredentials = useMutation({
     mutationFn: async () => {
       if (portalUsername.length < 3) throw new Error('El usuario debe tener al menos 3 caracteres');
-      if (portalPassword && portalPassword.length < 8) {
-        throw new Error('La contraseña debe tener al menos 8 caracteres');
+      if (portalPassword && portalPassword.length < 12) {
+        throw new Error('La contraseña debe tener al menos 12 caracteres');
       }
       if (portalPassword !== portalPasswordConfirm) {
         throw new Error('Las contraseñas no coinciden');

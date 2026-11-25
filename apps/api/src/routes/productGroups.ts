@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { logger } from '../logger.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import {
@@ -196,6 +196,7 @@ productGroupsRouter.put(
 
 productGroupsRouter.delete(
   '/product-groups/:id',
+  requireAdmin,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const id = Number(req.params.id);

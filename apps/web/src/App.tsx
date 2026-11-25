@@ -36,6 +36,7 @@ function lazyWrap(node: React.ReactNode) {
 import { Placeholder } from '@/pages/Placeholder';
 import { Layout } from '@/components/layout/Layout';
 import { RequireAuth } from '@/components/RequireAuth';
+import { RequireAdmin } from '@/components/RequireAdmin';
 
 export function App() {
   return (
@@ -44,12 +45,16 @@ export function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<RequireAuth />}>
-            <Route path="balanzas/:id/remoto" element={<ScaleRemotePage />} />
+            <Route element={<RequireAdmin />}>
+              <Route path="balanzas/:id/remoto" element={<ScaleRemotePage />} />
+            </Route>
             <Route element={<Layout />}>
               <Route index element={<DashboardPage />} />
               <Route path="balanzas" element={<ScalesPage />} />
-              <Route path="tiendas" element={<StoresPage />} />
               <Route path="balanzas/:id" element={<ScaleDetailPage />} />
+              <Route element={<RequireAdmin />}>
+                <Route path="tiendas" element={<StoresPage />} />
+              </Route>
               <Route path="catalogo" element={<CatalogPage />} />
               <Route path="catalogo/importar" element={lazyWrap(<CatalogImportPage />)} />
               <Route path="operarios" element={<Placeholder title="Operarios" phase="Fase 2" />} />
@@ -57,10 +62,14 @@ export function App() {
                 <Route index element={lazyWrap(<SalesReport />)} />
                 <Route path="ventas" element={lazyWrap(<SalesReport />)} />
                 <Route path="balanzas" element={lazyWrap(<ScaleStatsReport />)} />
-                <Route path="auditoria" element={lazyWrap(<AuditReport />)} />
+                <Route element={<RequireAdmin />}>
+                  <Route path="auditoria" element={lazyWrap(<AuditReport />)} />
+                </Route>
               </Route>
-              <Route path="integracion-erp" element={lazyWrap(<ErpPage />)} />
-              <Route path="configuracion" element={<SettingsPage />} />
+              <Route element={<RequireAdmin />}>
+                <Route path="integracion-erp" element={lazyWrap(<ErpPage />)} />
+                <Route path="configuracion" element={<SettingsPage />} />
+              </Route>
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

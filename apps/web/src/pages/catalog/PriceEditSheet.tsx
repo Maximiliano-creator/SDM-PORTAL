@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/queryClient';
+import { useAuthStore } from '@/store/auth';
 
 interface Props {
   shopGoodId: number | null;
@@ -16,6 +17,7 @@ interface Props {
 
 export function PriceEditSheet({ shopGoodId, onClose }: Props) {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const open = shopGoodId !== null;
 
   const q = useQuery({
@@ -281,7 +283,7 @@ export function PriceEditSheet({ shopGoodId, onClose }: Props) {
             </div>
 
             <div className="flex items-center justify-between gap-2 pt-3 border-t">
-              <Button
+              {isAdmin && <Button
                 type="button"
                 variant="destructive"
                 size="sm"
@@ -294,7 +296,7 @@ export function PriceEditSheet({ shopGoodId, onClose }: Props) {
               >
                 <Trash2 className="mr-1 h-4 w-4" />
                 {del.isPending ? 'Eliminando…' : 'Eliminar'}
-              </Button>
+              </Button>}
 
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={onClose} disabled={busy}>

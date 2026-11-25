@@ -1,4 +1,5 @@
 import { db } from '../db/client.js';
+import { logger } from '../logger.js';
 const TRACKED_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const IGNORED_PATHS = new Set(['/api/auth/login', '/api/auth/logout', '/api/erp/products']);
 const insertStmt = db.prepare('INSERT INTO audit_log (user_id, action, target, ip, request_id, payload) VALUES (?, ?, ?, ?, ?, ?)');
@@ -13,11 +14,10 @@ export function auditMiddleware(req, res, next) {
         if (res.statusCode >= 400)
             return;
         try {
-            const payload = req.body ? JSON.stringify(req.body).slice(0, 1024) : null;
-            insertStmt.run(req.user.sub, `${req.method} ${req.path}`, req.params.id ?? null, req.ip ?? null, req.headers['x-request-id'] ?? null, payload);
+            insertStmt.run(req.user.sub, `${req.method} ${req.path}`, req.params.id ?? null, req.ip ?? null, req.headers['x-request-id'] ?? null, null);
         }
-        catch {
-            // no romper la respuesta por error de audit
+        catch (err) {
+            logger.error({ err, requestId: req.headers['x-request-id'] }, 'No se pudo registrar la auditoría');
         }
     });
     next();

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Router } from 'express';
 import { BulkPriceUpdateSchema, PriceUpdateSchema, ProductFiltersSchema, } from '@sdm/shared';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { createShopGoodGroupRelations, deleteShopGoodGroupRelations, listShopGoodGroupRelations, listShopGoodGroups, } from '../upstream/productGroups.js';
 export const productsRouter = Router();
@@ -493,7 +493,7 @@ productsRouter.post('/products/bulk-department', async (req, res, next) => {
         next(err);
     }
 });
-productsRouter.delete('/products', async (req, res, next) => {
+productsRouter.delete('/products', requireAdmin, async (req, res, next) => {
     try {
         const parsed = DeleteProductsSchema.safeParse(req.body);
         if (!parsed.success) {

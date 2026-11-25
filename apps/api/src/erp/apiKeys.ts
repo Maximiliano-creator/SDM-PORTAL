@@ -6,6 +6,7 @@ export interface ApiKeyRow {
   name: string;
   key_hash: string;
   key_prefix: string;
+  can_distribute: number;
   enabled: number;
   created_at: string;
   created_by: number | null;
@@ -23,9 +24,10 @@ const stmts = {
     'SELECT * FROM erp_api_keys WHERE key_hash = ? AND enabled = 1',
   ),
   insert: db.prepare(
-    'INSERT INTO erp_api_keys (name, key_hash, key_prefix, created_by) VALUES (?, ?, ?, ?)',
+    'INSERT INTO erp_api_keys (name, key_hash, key_prefix, created_by, can_distribute) VALUES (?, ?, ?, ?, ?)',
   ),
   setEnabled: db.prepare('UPDATE erp_api_keys SET enabled = ? WHERE id = ?'),
+  setCanDistribute: db.prepare('UPDATE erp_api_keys SET can_distribute = ? WHERE id = ?'),
   remove: db.prepare('DELETE FROM erp_api_keys WHERE id = ?'),
   touch: db.prepare("UPDATE erp_api_keys SET last_used_at = datetime('now') WHERE id = ?"),
 };
@@ -43,12 +45,16 @@ export interface CreatedApiKey {
   createdAt: string;
 }
 
-export function createApiKey(name: string, createdBy: number | null): CreatedApiKey {
+export function createApiKey(
+  name: string,
+  createdBy: number | null,
+  canDistribute = false,
+): CreatedApiKey {
   // 32 bytes base64url ≈ 43 chars; prefijo `sdm_` para que sea reconocible
   const raw = `sdm_${randomBytes(32).toString('base64url')}`;
   const prefix = raw.slice(0, 12);
   const keyHash = hashKey(raw);
-  const info = stmts.insert.run(name, keyHash, prefix, createdBy);
+  const info = stmts.insert.run(name, keyHash, prefix, createdBy, canDistribute ? 1 : 0);
   const id = Number(info.lastInsertRowid);
   const row = stmts.getById.get(id);
   if (!row) throw new Error('Failed to persist API key');
@@ -61,6 +67,11 @@ export function listApiKeys(): Omit<ApiKeyRow, 'key_hash'>[] {
 
 export function setApiKeyEnabled(id: number, enabled: boolean): boolean {
   const r = stmts.setEnabled.run(enabled ? 1 : 0, id);
+  return r.changes > 0;
+}
+
+export function setApiKeyCanDistribute(id: number, canDistribute: boolean): boolean {
+  const r = stmts.setCanDistribute.run(canDistribute ? 1 : 0, id);
   return r.changes > 0;
 }
 

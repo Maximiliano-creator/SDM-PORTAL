@@ -2,9 +2,24 @@ import net from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
 import { logger } from '../logger.js';
 import { db } from '../db/client.js';
+import { config } from '../config.js';
 import { consumeTicket } from '../routes/vnc.js';
 import { getWebsockifyConfig } from '../db/settings.js';
-const wss = new WebSocketServer({ noServer: true });
+const MAX_CONCURRENT_VNC_SESSIONS = 4;
+const MAX_PENDING_CLIENT_BYTES = 1024 * 1024;
+const WS_BACKPRESSURE_HIGH_WATER = 8 * 1024 * 1024;
+const WS_BACKPRESSURE_LOW_WATER = 2 * 1024 * 1024;
+const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 });
+const tcpSockets = new Set();
+const closeSessionHandlers = new Set();
+export function closeVncConnections() {
+    for (const closeSession of closeSessionHandlers)
+        closeSession();
+    for (const client of wss.clients)
+        client.close(1001, 'Servidor apagándose');
+    for (const socket of tcpSockets)
+        socket.destroy();
+}
 const insertSession = db.prepare(`
   INSERT INTO vnc_sessions (user_id, username, term_id, ip, client_ip, request_id, started_at)
   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -32,6 +47,18 @@ export function handleVncUpgrade(req, socket, head) {
     if (!url.startsWith('/api/vnc/ws'))
         return false;
     const parsed = new URL(url, 'http://localhost');
+    if (parsed.pathname !== '/api/vnc/ws')
+        return false;
+    const origin = req.headers.origin;
+    const allowedOrigins = config.corsOrigin.split(',').map((value) => value.trim());
+    if (!origin || !allowedOrigins.includes(origin)) {
+        rejectUpgrade(socket, 403, 'Origin not allowed');
+        return true;
+    }
+    if (wss.clients.size >= MAX_CONCURRENT_VNC_SESSIONS) {
+        rejectUpgrade(socket, 503, 'VNC session limit reached');
+        return true;
+    }
     const ticketParam = parsed.searchParams.get('ticket');
     if (!ticketParam) {
         rejectUpgrade(socket, 400, 'Missing ticket');
@@ -56,6 +83,7 @@ function startProxy(clientWs, ticket, clientIp, requestId) {
     const logBase = { sessionId, termId: ticket.termId, ip: ticket.ip, vncPort, user: ticket.username };
     logger.info(logBase, 'VNC: abriendo túnel TCP directo');
     const tcpSocket = net.connect({ host: ticket.ip, port: vncPort });
+    tcpSockets.add(tcpSocket);
     tcpSocket.setNoDelay(true);
     tcpSocket.setTimeout(10_000);
     let bytesUp = 0;
@@ -64,11 +92,13 @@ function startProxy(clientWs, ticket, clientIp, requestId) {
     let lastActivity = Date.now();
     const startedAt = Date.now();
     const pendingFromClient = [];
+    let pendingClientBytes = 0;
     let tcpReady = false;
     function finish(reason) {
         if (closedReason)
             return;
         closedReason = reason;
+        closeSessionHandlers.delete(onServerShutdown);
         try {
             endSession.run(reason, bytesUp, bytesDown, sessionId);
         }
@@ -92,18 +122,30 @@ function startProxy(clientWs, ticket, clientIp, requestId) {
         }
         clearInterval(watchdog);
     }
+    const onServerShutdown = () => finish('server_shutdown');
+    closeSessionHandlers.add(onServerShutdown);
     tcpSocket.on('connect', () => {
         tcpReady = true;
         tcpSocket.setTimeout(0);
         logger.info(logBase, 'VNC: conectado a balanza por TCP');
-        while (pendingFromClient.length > 0) {
+        flushPendingClientData();
+    });
+    function flushPendingClientData() {
+        while (tcpReady && pendingFromClient.length > 0 && !tcpSocket.destroyed) {
             const chunk = pendingFromClient.shift();
-            if (chunk && !tcpSocket.destroyed) {
-                bytesUp += chunk.length;
-                tcpSocket.write(chunk);
+            if (!chunk)
+                continue;
+            pendingClientBytes -= chunk.length;
+            bytesUp += chunk.length;
+            if (!tcpSocket.write(chunk)) {
+                clientWs.pause();
+                return;
             }
         }
-    });
+        clientWs.resume();
+    }
+    tcpSocket.on('drain', flushPendingClientData);
+    tcpSocket.on('close', () => tcpSockets.delete(tcpSocket));
     tcpSocket.on('timeout', () => {
         logger.warn(logBase, 'VNC: timeout conectando al puerto 5900 de la balanza');
         finish('tcp_connect_timeout');
@@ -113,7 +155,17 @@ function startProxy(clientWs, ticket, clientIp, requestId) {
         if (clientWs.readyState !== WebSocket.OPEN)
             return;
         bytesDown += chunk.length;
-        clientWs.send(chunk, { binary: true });
+        clientWs.send(chunk, { binary: true }, (err) => {
+            if (err) {
+                finish('websocket_send_error');
+                return;
+            }
+            if (tcpSocket.isPaused() && clientWs.bufferedAmount <= WS_BACKPRESSURE_LOW_WATER) {
+                tcpSocket.resume();
+            }
+        });
+        if (clientWs.bufferedAmount >= WS_BACKPRESSURE_HIGH_WATER)
+            tcpSocket.pause();
     });
     tcpSocket.on('close', (hadError) => {
         finish(hadError ? 'tcp_close_error' : 'tcp_close');
@@ -134,12 +186,18 @@ function startProxy(clientWs, ticket, clientIp, requestId) {
         lastActivity = Date.now();
         const buf = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
         if (!tcpReady) {
+            pendingClientBytes += buf.length;
+            if (pendingClientBytes > MAX_PENDING_CLIENT_BYTES) {
+                finish('pending_client_data_limit');
+                return;
+            }
             pendingFromClient.push(buf);
             return;
         }
         if (!tcpSocket.destroyed) {
             bytesUp += buf.length;
-            tcpSocket.write(buf);
+            if (!tcpSocket.write(buf))
+                clientWs.pause();
         }
     });
     clientWs.on('close', (code, reason) => {

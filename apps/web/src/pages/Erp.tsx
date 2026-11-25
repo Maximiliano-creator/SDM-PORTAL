@@ -16,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Server,
+  Shield,
   Terminal,
   Trash2,
 } from 'lucide-react';
@@ -938,6 +939,7 @@ function ApiKeysCard() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
+  const [canDistribute, setCanDistribute] = useState(false);
   const [revealKey, setRevealKey] = useState<string | null>(null);
 
   const keysQuery = useQuery({
@@ -950,14 +952,15 @@ function ApiKeysCard() {
   });
 
   const createKey = useMutation({
-    mutationFn: async (name: string) => {
-      const r = await apiClient.createErpKey(name);
+    mutationFn: async (input: { name: string; canDistribute: boolean }) => {
+      const r = await apiClient.createErpKey(input.name, input.canDistribute);
       if (!r.ok) throw new Error(r.error.message);
       return r.data;
     },
     onSuccess: (data) => {
       setRevealKey(data.key);
       setNewName('');
+      setCanDistribute(false);
       setCreateOpen(false);
       qc.invalidateQueries({ queryKey: ['erp-keys'] });
       toast.success('API key creada');
@@ -966,8 +969,16 @@ function ApiKeysCard() {
   });
 
   const toggleKey = useMutation({
-    mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) => {
-      const r = await apiClient.toggleErpKey(id, enabled);
+    mutationFn: async ({
+      id,
+      enabled,
+      canDistribute,
+    }: {
+      id: number;
+      enabled?: boolean;
+      canDistribute?: boolean;
+    }) => {
+      const r = await apiClient.toggleErpKey(id, { enabled, canDistribute });
       if (!r.ok) throw new Error(r.error.message);
       return r.data;
     },
@@ -1020,6 +1031,7 @@ function ApiKeysCard() {
                   <TableHead>Nombre</TableHead>
                   <TableHead>Prefijo</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead>Distribución</TableHead>
                   <TableHead>Creada</TableHead>
                   <TableHead>Último uso</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -1033,6 +1045,11 @@ function ApiKeysCard() {
                     <TableCell>
                       <Badge variant={k.enabled ? 'success' : 'secondary'}>
                         {k.enabled ? 'Activa' : 'Inactiva'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={k.can_distribute ? 'destructive' : 'outline'}>
+                        {k.can_distribute ? 'Autorizada' : 'No autorizada'}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
@@ -1051,6 +1068,16 @@ function ApiKeysCard() {
                         title={k.enabled ? 'Deshabilitar' : 'Habilitar'}
                       >
                         {k.enabled ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          toggleKey.mutate({ id: k.id, canDistribute: k.can_distribute !== 1 })
+                        }
+                        title={k.can_distribute ? 'Quitar permiso de distribución' : 'Autorizar distribución'}
+                      >
+                        <Shield className="h-4 w-4" />
                       </Button>
                       <Button
                         size="sm"
@@ -1091,12 +1118,23 @@ function ApiKeysCard() {
               autoFocus
             />
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={canDistribute}
+              onChange={(event) => setCanDistribute(event.target.checked)}
+            />
+            <span>
+              Permitir sincronización completa y distribución a balanzas. Otórgalo solo a
+              integraciones que realmente lo necesiten.
+            </span>
+          </label>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>
               Cancelar
             </Button>
             <Button
-              onClick={() => createKey.mutate(newName.trim())}
+              onClick={() => createKey.mutate({ name: newName.trim(), canDistribute })}
               disabled={newName.trim().length < 2 || createKey.isPending}
             >
               {createKey.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}

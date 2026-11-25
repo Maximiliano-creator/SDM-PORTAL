@@ -87,9 +87,6 @@ export function LoginPage() {
               {loading ? 'Verificando…' : 'Ingresar'}
             </Button>
           </form>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Default tras instalación: <strong>admin</strong> / <strong>admin</strong>
-          </p>
         </CardContent>
       </Card>
     </div>

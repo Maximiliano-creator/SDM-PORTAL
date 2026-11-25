@@ -2,8 +2,8 @@ import { Router } from 'express';
 import express from 'express';
 import { z } from 'zod';
 import { ErpPushPayloadSchema, ErpProductInputSchema } from '@sdm/shared';
-import { requireAuth } from '../auth/middleware.js';
-import { authenticateApiKey, createApiKey, deleteApiKey, listApiKeys, setApiKeyEnabled } from '../erp/apiKeys.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
+import { authenticateApiKey, createApiKey, deleteApiKey, listApiKeys, setApiKeyCanDistribute, setApiKeyEnabled, } from '../erp/apiKeys.js';
 import { csvHeaderToErpKey, toShopGoodsBase } from '../erp/mapErp.js';
 import { parseCsv } from '../erp/csv.js';
 import { lookupShopId, upsertProducts } from '../erp/upserter.js';
@@ -12,13 +12,8 @@ import { logger } from '../logger.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { normalizeDistributionTypes } from '../upstream/distribution.js';
 // =================== Public push (API key) ===================
-// Se exporta aparte para montarlo ANTES del body-parser global de 4 MB
-// y de los routers que usan requireAuth.
+// Se monta antes del parser global para validar la API key antes de leer el body.
 export const erpPublicRouter = Router();
-// JSON hasta 32 MB para este endpoint; el resto del API queda en 4 MB.
-erpPublicRouter.use(express.json({ limit: '32mb' }));
-// CSV / texto plano hasta 32 MB.
-erpPublicRouter.use(express.text({ type: ['text/csv', 'text/plain'], limit: '32mb' }));
 function requireApiKey(req, res, next) {
     const headerKey = req.header('x-api-key');
     const auth = req.header('authorization');
@@ -41,7 +36,11 @@ function requireApiKey(req, res, next) {
         });
         return;
     }
-    req.apiKey = { id: row.id, name: row.name };
+    req.apiKey = {
+        id: row.id,
+        name: row.name,
+        canDistribute: row.can_distribute === 1,
+    };
     next();
 }
 const insertSync = db.prepare(`
@@ -55,7 +54,7 @@ const updateSync = db.prepare(`
       duration_ms = ?, errors_json = ?, ended_at = datetime('now')
   WHERE id = ?
 `);
-erpPublicRouter.post('/products', requireApiKey, async (req, res, next) => {
+erpPublicRouter.post('/products', requireApiKey, express.json({ limit: '12mb' }), express.text({ type: ['text/csv', 'text/plain'], limit: '32mb' }), async (req, res, next) => {
     const apiKey = req.apiKey;
     const ct = (req.header('content-type') ?? '').toLowerCase();
     const source = ct.includes('csv') ? 'csv' : ct.includes('json') ? 'json' : 'text';
@@ -78,6 +77,13 @@ erpPublicRouter.post('/products', requireApiKey, async (req, res, next) => {
                 return;
             }
             const rows = parseCsv(req.body);
+            if (rows.length > 1000) {
+                res.status(413).json({
+                    ok: false,
+                    error: { code: 'TOO_MANY_PRODUCTS', message: 'El límite es de 1.000 productos por lote.' },
+                });
+                return;
+            }
             const parsedItems = [];
             for (let r = 0; r < rows.length; r++) {
                 const row = rows[r];
@@ -121,6 +127,16 @@ erpPublicRouter.post('/products', requireApiKey, async (req, res, next) => {
             items = parsed.data.items;
             shopCode = parsed.data.shop_code;
             mode = parsed.data.mode;
+        }
+        if (mode === 'full' && !apiKey.canDistribute) {
+            res.status(403).json({
+                ok: false,
+                error: {
+                    code: 'API_KEY_SCOPE',
+                    message: 'Esta clave no tiene permiso para sincronización completa.',
+                },
+            });
+            return;
         }
         if (items.length === 0) {
             res.status(400).json({
@@ -197,8 +213,18 @@ erpPublicRouter.get('/scales', requireApiKey, async (_req, res, next) => {
         next(err);
     }
 });
-erpPublicRouter.post('/scales/distribute', requireApiKey, async (req, res, next) => {
+erpPublicRouter.post('/scales/distribute', requireApiKey, express.json({ limit: '64kb' }), async (req, res, next) => {
     try {
+        if (!req.apiKey.canDistribute) {
+            res.status(403).json({
+                ok: false,
+                error: {
+                    code: 'API_KEY_SCOPE',
+                    message: 'Esta clave no tiene permiso para distribuir a balanzas.',
+                },
+            });
+            return;
+        }
         const parsed = ErpDistributeSchema.safeParse(req.body);
         if (!parsed.success) {
             res.status(400).json({
@@ -289,7 +315,7 @@ const SinglePriceUpdateSchema = z.object({
     promotionPrice: z.number().nonnegative().nullable().optional(),
     distribute: z.boolean().default(false),
 });
-erpPublicRouter.post('/products/price', requireApiKey, async (req, res, next) => {
+erpPublicRouter.post('/products/price', requireApiKey, express.json({ limit: '256kb' }), async (req, res, next) => {
     try {
         const parsed = SinglePriceUpdateSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -300,6 +326,16 @@ erpPublicRouter.post('/products/price', requireApiKey, async (req, res, next) =>
             return;
         }
         const { shop_code, goodsPlu, price, memberPrice, promotionPrice, distribute } = parsed.data;
+        if (distribute && !req.apiKey.canDistribute) {
+            res.status(403).json({
+                ok: false,
+                error: {
+                    code: 'API_KEY_SCOPE',
+                    message: 'Esta clave no tiene permiso para distribuir a balanzas.',
+                },
+            });
+            return;
+        }
         const shopId = await lookupShopId(shop_code);
         if (shopId === null) {
             res.status(404).json({
@@ -470,9 +506,10 @@ erpPublicRouter.get('/openapi.json', (_req, res) => {
 // =================== Admin (JWT) ===================
 export const erpAdminRouter = Router();
 const adminRouter = erpAdminRouter;
-adminRouter.use(requireAuth);
+adminRouter.use(requireAuth, requireAdmin);
 const CreateKeySchema = z.object({
     name: z.string().min(2).max(64),
+    canDistribute: z.boolean().default(false),
 });
 adminRouter.get('/keys', (_req, res) => {
     res.json({ ok: true, data: listApiKeys() });
@@ -486,7 +523,7 @@ adminRouter.post('/keys', (req, res) => {
         });
         return;
     }
-    const created = createApiKey(parsed.data.name, req.user.sub);
+    const created = createApiKey(parsed.data.name, req.user.sub, parsed.data.canDistribute);
     res.status(201).json({ ok: true, data: created });
 });
 adminRouter.patch('/keys/:id', (req, res) => {
@@ -495,17 +532,22 @@ adminRouter.patch('/keys/:id', (req, res) => {
         res.status(400).json({ ok: false, error: { code: 'BAD_ID', message: 'ID invÃƒÂ¡lido' } });
         return;
     }
-    const body = z.object({ enabled: z.boolean() }).safeParse(req.body);
+    const body = z
+        .object({ enabled: z.boolean().optional(), canDistribute: z.boolean().optional() })
+        .refine((value) => value.enabled !== undefined || value.canDistribute !== undefined)
+        .safeParse(req.body);
     if (!body.success) {
         res.status(400).json({ ok: false, error: { code: 'VALIDATION', message: 'Body invÃƒÂ¡lido' } });
         return;
     }
-    const ok = setApiKeyEnabled(id, body.data.enabled);
+    const ok = (body.data.enabled === undefined || setApiKeyEnabled(id, body.data.enabled)) &&
+        (body.data.canDistribute === undefined ||
+            setApiKeyCanDistribute(id, body.data.canDistribute));
     if (!ok) {
         res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'No existe' } });
         return;
     }
-    res.json({ ok: true, data: { id, enabled: body.data.enabled } });
+    res.json({ ok: true, data: { id, ...body.data } });
 });
 adminRouter.delete('/keys/:id', (req, res) => {
     const id = Number(req.params.id);

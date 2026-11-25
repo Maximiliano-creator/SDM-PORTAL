@@ -35,6 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { apiClient } from '@/lib/queryClient';
+import { useAuthStore } from '@/store/auth';
 
 function checkOnline(scale: Scale): boolean {
   return scale.onlineStatus === 1;
@@ -63,6 +64,7 @@ interface ScaleFormState {
 
 export function ScalesPage() {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const scalesQuery = useQuery({
     queryKey: ['scales'],
     queryFn: async () => {
@@ -318,10 +320,10 @@ export function ScalesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={openCreate}>
+          {isAdmin && <Button size="sm" onClick={openCreate}>
             <Plus className="mr-1.5 h-4 w-4" /> Nueva
-          </Button>
-          <Button
+          </Button>}
+          {isAdmin && <Button
             size="sm"
             variant="secondary"
             disabled={selectedIds.length !== 1}
@@ -331,8 +333,8 @@ export function ScalesPage() {
             }}
           >
             <Pencil className="mr-1.5 h-4 w-4" /> Editar
-          </Button>
-          <Button
+          </Button>}
+          {isAdmin && <Button
             size="sm"
             variant="destructive"
             disabled={selectedIds.length === 0 || deleteMutation.isPending}
@@ -343,8 +345,8 @@ export function ScalesPage() {
             }}
           >
             <Trash2 className="mr-1.5 h-4 w-4" /> Borrar
-          </Button>
-          <Button
+          </Button>}
+          {isAdmin && <Button
             size="sm"
             variant="outline"
             disabled={discoverMutation.isPending}
@@ -352,15 +354,15 @@ export function ScalesPage() {
           >
             <Radar className="mr-1.5 h-4 w-4" />
             {discoverMutation.isPending ? 'Buscando…' : 'Buscar Balanza'}
-          </Button>
-          <Button
+          </Button>}
+          {isAdmin && <Button
             size="sm"
             variant="default"
             disabled={selectedIds.length === 0}
             onClick={() => setSendOpen(true)}
           >
             <Send className="mr-1.5 h-4 w-4" /> Enviar Datos ({selectedIds.length})
-          </Button>
+          </Button>}
           <Button
             size="sm"
             variant="ghost"
@@ -498,7 +500,7 @@ export function ScalesPage() {
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
+                    {isAdmin && <div className="flex items-center justify-end gap-1">
                       <Button
                         size="sm"
                         variant="outline"
@@ -535,7 +537,7 @@ export function ScalesPage() {
                       >
                         <Send className="h-3.5 w-3.5 text-primary" />
                       </Button>
-                    </div>
+                    </div>}
                   </TableCell>
                 </TableRow>
               );

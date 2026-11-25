@@ -37,7 +37,7 @@ export const ErpPushPayloadSchema = z.object({
    * - `full`: en v1 se trata igual que incremental (sin borrado de stale); reservado para futuro
    */
   mode: z.enum(['incremental', 'full']).default('incremental'),
-  items: z.array(ErpProductInputSchema).min(1).max(20000),
+  items: z.array(ErpProductInputSchema).min(1).max(1000),
 });
 export type ErpPushPayload = z.infer<typeof ErpPushPayloadSchema>;
 

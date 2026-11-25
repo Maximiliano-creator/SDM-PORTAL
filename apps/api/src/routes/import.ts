@@ -41,7 +41,7 @@ const ImportItemSchema = z.object({
 const ImportPayloadSchema = z.object({
   shopCode: z.string().min(1),
   mode: z.enum(['full', 'incremental']).default('incremental'),
-  items: z.array(ImportItemSchema).min(1).max(20000),
+  items: z.array(ImportItemSchema).min(1).max(1000),
 });
 
 const CONCURRENCY = 4;
@@ -99,6 +99,13 @@ importRouter.post('/import/products', async (req: Request, res: Response, next: 
       return;
     }
     const { shopCode, mode, items } = parsed.data;
+    if (mode === 'full' && req.user?.role !== 'admin') {
+      res.status(403).json({
+        ok: false,
+        error: { code: 'FORBIDDEN', message: 'Solo admin puede ejecutar una importación completa.' },
+      });
+      return;
+    }
     type ImportEntry = { item: (typeof items)[number]; originalRow: number };
 
     const shopId = await lookupShopId(shopCode);

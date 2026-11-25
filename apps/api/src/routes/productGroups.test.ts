@@ -12,6 +12,7 @@ vi.mock('../auth/middleware.js', () => ({
     Object.assign(req, { user: { sub: 1 } });
     next();
   },
+  requireAdmin: (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 vi.mock('../upstream/termAdmin.js', () => ({
   termRequest: (...args: unknown[]) => termRequestMock(...args),

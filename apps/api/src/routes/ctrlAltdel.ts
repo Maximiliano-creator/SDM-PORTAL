@@ -1,8 +1,11 @@
 // Route to proxy or redirect Term Admin remote control request
 import { Router } from 'express';
 import { logger } from '../logger.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
+import { isValidIp } from '../upstream/websockify.js';
 
 const router = Router();
+router.use(requireAuth, requireAdmin);
 
 /**
  * GET /service/api/ctrlAltdel
@@ -11,7 +14,7 @@ const router = Router();
  */
 router.get('/ctrlAltdel', (req, res) => {
   const { ip, shopId } = req.query as Record<string, string | undefined>;
-  if (!ip || !shopId) {
+  if (!ip || !isValidIp(ip) || !shopId || !Number.isSafeInteger(Number(shopId))) {
     logger.warn({ ip, shopId }, 'Missing ip or shopId for ctrlAltdel');
     return res.status(400).json({ error: 'Missing ip or shopId' });
   }

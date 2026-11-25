@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+import type { IncomingMessage } from 'node:http';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from './config.js';
 import { logger } from './logger.js';
@@ -20,9 +21,10 @@ import { vncRouter } from './routes/vnc.js';
 import ctrlAltdelRouter from './routes/ctrlAltdel.js';
 import termAdminNovncRouter from './routes/termAdminNovnc.js';
 import { erpPublicRouter, erpAdminRouter } from './routes/erp.js';
-import { handleVncUpgrade } from './vnc/proxy.js';
-import { startMirrorJobs } from './jobs/mirrorSync.js';
+import { closeVncConnections, handleVncUpgrade } from './vnc/proxy.js';
+import { startMirrorJobs, stopMirrorJobs } from './jobs/mirrorSync.js';
 import { ensureSeedAdmin } from './db/users.js';
+import { db } from './db/client.js';
 import { UpstreamError } from './upstream/termAdmin.js';
 import { auditMiddleware } from './audit/middleware.js';
 import { ZodError } from 'zod';
@@ -51,19 +53,24 @@ async function main() {
     pinoHttp({
       logger,
       customProps: (req) => ({ requestId: req.headers['x-request-id'] }),
+      serializers: {
+        req: (req: IncomingMessage) => ({
+          method: req.method,
+          url: new URL(req.url ?? '/', 'http://localhost').pathname,
+          remoteAddress: req.socket?.remoteAddress ?? null,
+        }),
+      },
       autoLogging: { ignore: (req) => req.url === '/api/health' },
     }),
   );
 
-  // ERP push público: se monta ANTES del json global de 4 MB y de
-  // los routers con requireAuth, porque trae su propio body-parser
-  // de 32 MB y autentica con API key, no con JWT.
+  // La API ERP valida la API key antes de parsear cuerpos grandes.
   app.use('/api/erp', erpPublicRouter);
 
   const uploadsDir = path.resolve(process.cwd(), 'data', 'uploads');
   app.use('/uploads', express.static(uploadsDir));
 
-  app.use(express.json({ limit: '32mb' }));
+  app.use(express.json({ limit: '12mb' }));
   app.use(express.urlencoded({ extended: false }));
 
   app.use(auditMiddleware);
@@ -119,11 +126,12 @@ async function main() {
         return;
       }
       logger.error({ err, requestId }, 'Unhandled error');
-      res.status(err.status ?? 500).json({
+      const status = err.status ?? 500;
+      res.status(status).json({
         ok: false,
         error: {
           code: err.code ?? 'INTERNAL',
-          message: err.message ?? 'Error interno',
+          message: status >= 500 ? 'Error interno del servidor' : err.message,
           requestId,
         },
       });
@@ -140,6 +148,31 @@ async function main() {
     socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
     socket.destroy();
   });
+
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, 'SDM API shutting down');
+    stopMirrorJobs();
+    closeVncConnections();
+    const forceClose = setTimeout(() => {
+      logger.error('Graceful shutdown timed out; closing remaining connections');
+      server.closeAllConnections();
+      db.close();
+      process.exit(1);
+    }, 10_000);
+    server.close((err) => {
+      clearTimeout(forceClose);
+      if (err) {
+        logger.error({ err }, 'Error closing HTTP server');
+        process.exitCode = 1;
+      }
+      db.close();
+    });
+  };
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 main().catch((err) => {

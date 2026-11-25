@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/queryClient';
 import { VncViewerModal } from '@/components/vnc/VncViewerModal';
+import { useAuthStore } from '@/store/auth';
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -30,6 +31,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function ScaleDetailPage() {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const { id } = useParams();
   const numericId = Number(id);
   const [vncOpen, setVncOpen] = useState(false);
@@ -180,13 +182,13 @@ export function ScaleDetailPage() {
           <p className="text-sm text-muted-foreground">ID {s.termId} · {s.ipAddress}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={startEdit}>
+          {isAdmin && <Button size="sm" variant="outline" onClick={startEdit}>
             <Pencil className="mr-1.5 h-4 w-4" /> Editar Balanza
-          </Button>
-          <Button size="sm" variant="default" onClick={() => setSendOpen(true)}>
+          </Button>}
+          {isAdmin && <Button size="sm" variant="default" onClick={() => setSendOpen(true)}>
             <Send className="mr-1.5 h-4 w-4" /> Enviar Datos
-          </Button>
-          <Button
+          </Button>}
+          {isAdmin && <Button
             size="sm"
             variant="secondary"
             onClick={() => setVncOpen(true)}
@@ -200,8 +202,8 @@ export function ScaleDetailPage() {
             }
           >
             <MonitorPlay className="mr-1.5 h-4 w-4" /> Control remoto
-          </Button>
-          <Button
+          </Button>}
+          {isAdmin && <Button
             size="sm"
             variant="secondary"
             onClick={() => {
@@ -218,17 +220,19 @@ export function ScaleDetailPage() {
             }
           >
             <MonitorPlay className="mr-1.5 h-4 w-4" /> Control remoto (Nueva Pestaña)
-          </Button>
+          </Button>}
           <Badge variant={online ? 'success' : 'destructive'}>{online ? 'Online' : 'Offline'}</Badge>
         </div>
       </div>
 
-      <VncViewerModal
-        open={vncOpen}
-        onOpenChange={setVncOpen}
-        termId={s.termId}
-        termName={s.termName ?? `Balanza ${s.termId}`}
-      />
+      {isAdmin && (
+        <VncViewerModal
+          open={vncOpen}
+          onOpenChange={setVncOpen}
+          termId={s.termId}
+          termName={s.termName ?? `Balanza ${s.termId}`}
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>

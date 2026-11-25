@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/table';
 import { apiClient } from '@/lib/queryClient';
 import { parseExcel, type ImportRow } from '@/lib/excel';
+import { useAuthStore } from '@/store/auth';
 
 const DATA_TYPES: { id: 0 | 1 | 2; label: string; description: string }[] = [
   { id: 0, label: 'Enviar Productos', description: 'Catálogo de PLUs, nombres, precios, unidades y departamentos' },
@@ -39,8 +40,28 @@ export interface UploadedImageFile {
   file: File;
   name: string;
   previewUrl: string;
-  base64: string;
   matchedPlu?: string;
+}
+
+const MAX_IMPORT_PRODUCTS = 1000;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BATCH_CHARS = 9 * 1024 * 1024;
+const MAX_IMAGE_BATCH_BYTES = 8 * 1024 * 1024;
+const MAX_IMAGE_BATCH_ITEMS = 25;
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        reject(new Error(`No se pudo leer ${file.name}.`));
+        return;
+      }
+      resolve(reader.result);
+    };
+    reader.onerror = () => reject(new Error(`No se pudo leer ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
 }
 
 function normalizeForMatching(text: string): string {
@@ -92,6 +113,7 @@ function matchImageToPlu(filename: string, rows: ImportRow[]): string | undefine
 
 export function CatalogImportPage() {
   const navigate = useNavigate();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const fileRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -170,6 +192,9 @@ export function CatalogImportPage() {
   async function handleFile(file: File) {
     try {
       const result = await parseExcel(file);
+      if (result.rows.length > MAX_IMPORT_PRODUCTS) {
+        throw new Error(`El archivo supera el límite de ${MAX_IMPORT_PRODUCTS} productos por importación.`);
+      }
       setRows(result.rows);
       setWarnings(result.warnings);
       setUnknown(result.unknownHeaders);
@@ -190,28 +215,32 @@ export function CatalogImportPage() {
   }
 
   async function handleImageFiles(files: FileList | File[]) {
-    const newFiles = Array.from(files).filter((f) =>
+    const selectedFiles = Array.from(files).filter((f) =>
       /\.(jpe?g|png|webp|bmp|gif)$/i.test(f.name),
     );
-    if (newFiles.length === 0) {
+    if (selectedFiles.length === 0) {
       toast.error('No se seleccionaron archivos de imagen válidos (.jpg, .png, .webp).');
+      return;
+    }
+
+    const oversizedFiles = selectedFiles.filter((file) => file.size > MAX_IMAGE_BYTES);
+    if (oversizedFiles.length > 0) {
+      toast.error(`Cada imagen debe pesar 5 MB o menos. Revisa: ${oversizedFiles[0]?.name}`);
+      return;
+    }
+
+    const prospectiveNames = new Set(images.map((image) => image.name));
+    selectedFiles.forEach((file) => prospectiveNames.add(file.name));
+    if (prospectiveNames.size > MAX_IMPORT_PRODUCTS) {
+      toast.error(`Se admite un máximo de ${MAX_IMPORT_PRODUCTS} imágenes por importación.`);
       return;
     }
 
     const processed: UploadedImageFile[] = [];
 
-    for (const file of newFiles) {
-      const id = `${file.name}-${file.size}-${Date.now()}`;
+    for (const file of selectedFiles) {
+      const id = crypto.randomUUID();
       const previewUrl = URL.createObjectURL(file);
-
-      // Convertir a base64
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
       const matchedPlu = matchImageToPlu(file.name, rows);
 
       processed.push({
@@ -219,7 +248,6 @@ export function CatalogImportPage() {
         file,
         name: file.name,
         previewUrl,
-        base64,
         matchedPlu,
       });
     }
@@ -278,27 +306,56 @@ export function CatalogImportPage() {
 
       // 1. Si hay imágenes vinculadas a los PLUs, subirlas primero al servidor
       const imagesToUpload = images.filter((img) => img.matchedPlu);
-      let uploadedMap = new Map<string, string>(); // plu -> serverUrl
+      const uploadedMap = new Map<string, string>(); // plu -> serverUrl
 
       if (imagesToUpload.length > 0) {
-        toast.loading('Subiendo imágenes al servidor...', { id: 'import-progress' });
-        const uploadRes = await apiClient.uploadImages(
-          imagesToUpload.map((img) => ({
-            name: img.name,
-            data: img.base64,
-            size: img.file.size,
-          })),
-        );
-
-        if (!uploadRes.ok) {
-          throw new Error(`Error al subir imágenes: ${uploadRes.error.message}`);
+        const batches: UploadedImageFile[][] = [];
+        let currentBatch: UploadedImageFile[] = [];
+        let currentChars = 0;
+        let currentBytes = 0;
+        for (const image of imagesToUpload) {
+          const encodedChars = 4 * Math.ceil(image.file.size / 3) + 64;
+          if (
+            currentBatch.length > 0 &&
+            (currentBatch.length >= MAX_IMAGE_BATCH_ITEMS ||
+              currentChars + encodedChars > MAX_IMAGE_BATCH_CHARS ||
+              currentBytes + image.file.size > MAX_IMAGE_BATCH_BYTES)
+          ) {
+            batches.push(currentBatch);
+            currentBatch = [];
+            currentChars = 0;
+            currentBytes = 0;
+          }
+          currentBatch.push(image);
+          currentChars += encodedChars;
+          currentBytes += image.file.size;
         }
+        if (currentBatch.length > 0) batches.push(currentBatch);
 
-        // Mapear cada imagen subida a su PLU correspondiente
-        for (const uploadedItem of uploadRes.data.items) {
-          const matchedImg = imagesToUpload.find((im) => im.name === uploadedItem.originalName);
-          if (matchedImg?.matchedPlu) {
-            uploadedMap.set(matchedImg.matchedPlu, uploadedItem.url);
+        for (let index = 0; index < batches.length; index++) {
+          const batch = batches[index]!;
+          toast.loading(
+            `Subiendo imágenes: lote ${index + 1} de ${batches.length}...`,
+            { id: 'import-progress' },
+          );
+          const uploadRes = await apiClient.uploadImages(
+            await Promise.all(
+              batch.map(async (image) => ({
+                name: image.name,
+                data: await readAsDataUrl(image.file),
+                size: image.file.size,
+              })),
+            ),
+          );
+          if (!uploadRes.ok) {
+            throw new Error(`Error al subir imágenes: ${uploadRes.error.message}`);
+          }
+
+          for (const uploadedItem of uploadRes.data.items) {
+            const matchedImg = batch.find((image) => image.name === uploadedItem.originalName);
+            if (matchedImg?.matchedPlu) {
+              uploadedMap.set(matchedImg.matchedPlu, uploadedItem.url);
+            }
           }
         }
       }
@@ -378,7 +435,7 @@ export function CatalogImportPage() {
           </Link>
         </Button>
 
-        <Button
+        {isAdmin && <Button
           variant="default"
           onClick={() => {
             if (selectedTermIds.length === 0 && availableScales.length === 1 && availableScales[0]) {
@@ -388,7 +445,7 @@ export function CatalogImportPage() {
           }}
         >
           <Send className="h-4 w-4" /> Enviar Datos a Balanza
-        </Button>
+        </Button>}
       </div>
 
       <div>
@@ -398,8 +455,7 @@ export function CatalogImportPage() {
         </p>
       </div>
 
-      {/* Tarjeta de Envío directo a Balanzas */}
-      <Card>
+      {isAdmin && <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div>
             <CardTitle className="text-base flex items-center gap-2">
@@ -522,10 +578,10 @@ export function CatalogImportPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Modal de selección de paquetes a enviar */}
-      {showSendModal && (
+      {isAdmin && showSendModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={() => !distributeMut.isPending && setShowSendModal(false)}
@@ -669,7 +725,8 @@ export function CatalogImportPage() {
             <ImageIcon className="h-10 w-10 text-muted-foreground" />
             <p className="mt-2 text-sm font-medium">2. Subir Imágenes de Productos</p>
             <p className="mb-3 text-xs text-muted-foreground">
-              Arrastra múltiples imágenes (ej. <code>PLATANO.JPG</code>, <code>1.png</code>)
+              Hasta 1.000 imágenes, máximo 5 MB cada una. Se cargan en lotes acotados.
+              Ejemplos: <code>PLATANO.JPG</code>, <code>1.png</code>.
             </p>
             <div className="flex gap-2">
               <Button
@@ -826,6 +883,7 @@ export function CatalogImportPage() {
                           <img
                             src={matchedImg.previewUrl}
                             alt={r.goodsName}
+                            loading="lazy"
                             className="h-10 w-10 rounded border object-cover shadow-sm"
                           />
                         ) : (

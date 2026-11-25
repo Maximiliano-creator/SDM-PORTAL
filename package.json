@@ -16,10 +16,13 @@
     "clean": "pnpm -r exec rimraf dist .turbo node_modules"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.5",
+    "eslint": "^10.15.0",
     "prettier": "^3.4.2",
     "rimraf": "^6.0.1",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.18.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

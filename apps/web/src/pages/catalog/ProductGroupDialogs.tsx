@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/queryClient';
+import { useAuthStore } from '@/store/auth';
 
 interface ShopProps {
   shops: Shop[];
@@ -33,6 +34,7 @@ export function ProductGroupManagementDialog({
   initialShopId,
 }: GroupManagementProps) {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const [shopId, setShopId] = useState<number | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -252,7 +254,7 @@ export function ProductGroupManagementDialog({
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button
+                      {isAdmin && <Button
                         size="icon"
                         variant="ghost"
                         title="Eliminar grupo"
@@ -268,7 +270,7 @@ export function ProductGroupManagementDialog({
                         }}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      </Button>}
                     </>
                   )}
                 </div>

@@ -1,20 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
+import { clearSessionCookies } from '../auth/cookies.js';
 import { getAllSettings, setSetting } from '../db/settings.js';
 import { invalidateUpstreamToken, pingTermAdmin } from '../upstream/termAdmin.js';
 import { db } from '../db/client.js';
 import { updateUserCredentials } from '../db/users.js';
 export const settingsRouter = Router();
-settingsRouter.use(requireAuth);
+settingsRouter.use(requireAuth, requireAdmin);
 const SettingsUpdateSchema = z.object({
     'term_admin.url': z.string().url().optional(),
     'term_admin.username': z.string().min(1).max(64).optional(),
-    'term_admin.password': z.string().min(1).max(256).optional(),
+    'term_admin.password': z.preprocess((value) => (value === '' ? undefined : value), z.string().min(1).max(256).optional()),
     'branding.app_name': z.string().min(1).max(64).optional(),
     'branding.primary': z.string().optional(),
     'portal.username': z.string().min(3).max(64).regex(/^[a-zA-Z0-9._-]+$/).optional(),
-    'portal.password': z.string().min(8).max(256).optional(),
+    'portal.password': z.string().min(12).max(256).optional(),
 });
 settingsRouter.get('/settings', (_req, res) => {
     const all = getAllSettings();
@@ -26,17 +27,15 @@ settingsRouter.get('/settings', (_req, res) => {
 });
 settingsRouter.put('/settings', async (req, res, next) => {
     try {
-        if (req.user?.role !== 'admin') {
-            res
-                .status(403)
-                .json({ ok: false, error: { code: 'FORBIDDEN', message: 'Solo admin puede editar settings' } });
-            return;
-        }
         const parsed = SettingsUpdateSchema.safeParse(req.body);
         if (!parsed.success) {
             res.status(400).json({
                 ok: false,
-                error: { code: 'VALIDATION', message: 'Datos inválidos', details: parsed.error.flatten() },
+                error: {
+                    code: 'VALIDATION',
+                    message: parsed.error.issues[0]?.message ?? 'Datos inválidos',
+                    details: parsed.error.flatten(),
+                },
             });
             return;
         }
@@ -69,6 +68,7 @@ settingsRouter.put('/settings', async (req, res, next) => {
                 throw err;
             }
             changed.push(...[portalUsername ? 'portal.username' : null, portalPassword ? 'portal.password' : null].filter(Boolean));
+            clearSessionCookies(res);
         }
         if (changed.some((k) => k.startsWith('term_admin.'))) {
             invalidateUpstreamToken();

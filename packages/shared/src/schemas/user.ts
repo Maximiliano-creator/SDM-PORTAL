@@ -22,7 +22,6 @@ export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
 export const AuthSessionSchema = z.object({
   user: UserSchema,
-  token: z.string(),
   expiresAt: z.string(),
 });
 export type AuthSession = z.infer<typeof AuthSessionSchema>;

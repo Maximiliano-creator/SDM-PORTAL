@@ -40,10 +40,16 @@ export function getTermAdminConfig(): TermAdminConfig {
   // Precedencia: valor guardado desde la pantalla de Configuración (app_settings)
   // > variables de entorno del despliegue (.env). Antes el .env se ignoraba por
   // completo, lo que hacía imposible reconfigurar el upstream sin tocar la BD.
+  const password = getSetting('term_admin.password') ?? config.termAdminPassword;
+  if (!password) {
+    throw new Error(
+      'Credenciales de term_admin no configuradas. Guárdalas desde Configuración o define TERM_ADMIN_PASSWORD.',
+    );
+  }
   return {
     url: getSetting('term_admin.url') ?? config.termAdminUrl,
     username: getSetting('term_admin.username') ?? config.termAdminUsername,
-    password: getSetting('term_admin.password') ?? config.termAdminPassword,
+    password,
   };
 }
 

@@ -22,13 +22,13 @@ import { useEffect } from 'react';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: Gauge, end: true },
-  { to: '/tiendas', label: 'Tiendas', icon: Store },
+  { to: '/tiendas', label: 'Tiendas', icon: Store, adminOnly: true },
   { to: '/balanzas', label: 'Balanzas', icon: Monitor },
   { to: '/catalogo', label: 'Catálogo', icon: Package },
   { to: '/operarios', label: 'Operarios', icon: Users },
   { to: '/reportes', label: 'Reportes', icon: LineChart },
-  { to: '/integracion-erp', label: 'Integración ERP', icon: Plug },
-  { to: '/configuracion', label: 'Configuración', icon: Settings },
+  { to: '/integracion-erp', label: 'Integración ERP', icon: Plug, adminOnly: true },
+  { to: '/configuracion', label: 'Configuración', icon: Settings, adminOnly: true },
 ];
 
 export function Layout() {
@@ -64,7 +64,9 @@ export function Layout() {
           <span className="text-lg font-semibold">{appName}</span>
         </div>
         <nav className="flex-1 space-y-1 p-3">
-          {navItems.map((item) => (
+          {navItems
+            .filter((item) => !item.adminOnly || user?.role === 'admin')
+            .map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -81,7 +83,7 @@ export function Layout() {
               <item.icon className="h-4 w-4" />
               {item.label}
             </NavLink>
-          ))}
+            ))}
         </nav>
         <div className="border-t p-3">
           <div className="mb-2 px-2 text-xs">

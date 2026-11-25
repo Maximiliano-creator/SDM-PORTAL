@@ -10,19 +10,27 @@ const ConfigSchema = z.object({
   nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   jwtSecret: z.string().min(32),
-  jwtExpiresIn: z.string().default('8h'),
+  jwtExpiresIn: z.string().default('4h'),
   dbPath: z.string().default('./data/app.db'),
   termAdminUrl: z.string().url().default('http://localhost:19697'),
   termAdminUsername: z.string().default('admin'),
-  termAdminPassword: z.string().default('123456'),
-  corsOrigin: z.string().default('http://localhost:5173'),
+  termAdminPassword: z.string().min(1).optional(),
+  initialAdminPassword: z.string().min(12).optional(),
+  cookieSecure: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  corsOrigin: z.string().default('http://localhost:5173,http://127.0.0.1:5173'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 
 function resolveJwtSecret(dbPath: string): string {
-  const envSecret = process.env.JWT_SECRET?.trim();
-  if (envSecret && envSecret.length >= 32) return envSecret;
+  const configuredSecret = process.env.JWT_SECRET?.trim();
+  if (configuredSecret) {
+    const envSecret = configuredSecret;
+    if (envSecret.length < 32) {
+      throw new Error('JWT_SECRET debe tener al menos 32 caracteres.');
+    }
+    return envSecret;
+  }
 
   const secretFile = join(dirname(dbPath), '.jwt-secret');
   if (existsSync(secretFile)) {
@@ -51,11 +59,17 @@ export function loadConfig(): Config {
     termAdminUrl: process.env.TERM_ADMIN_URL,
     termAdminUsername: process.env.TERM_ADMIN_USERNAME,
     termAdminPassword: process.env.TERM_ADMIN_PASSWORD,
+    initialAdminPassword: process.env.INITIAL_ADMIN_PASSWORD,
+    cookieSecure: process.env.COOKIE_SECURE,
     corsOrigin: process.env.CORS_ORIGIN,
   });
 
   if (!parsed.success) {
     console.error('Configuración inválida:', parsed.error.flatten().fieldErrors);
+    process.exit(1);
+  }
+  if (parsed.data.nodeEnv === 'production' && !parsed.data.cookieSecure) {
+    console.error('Configuración inválida: COOKIE_SECURE=true es obligatorio en producción (requiere HTTPS).');
     process.exit(1);
   }
   return parsed.data;

@@ -5,7 +5,7 @@ import {
   type PagedResponse,
   type PanStatDay,
 } from '@sdm/shared';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { db } from '../db/client.js';
 
@@ -138,7 +138,7 @@ reportsRouter.get('/stats/daily', async (req: Request, res: Response, next: Next
   }
 });
 
-reportsRouter.get('/audit', async (req: Request, res: Response, next: NextFunction) => {
+reportsRouter.get('/audit', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const limit = Math.min(Number(req.query.limit ?? 100), 500);
     const rows = db

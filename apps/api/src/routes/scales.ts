@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest, UpstreamError } from '../upstream/termAdmin.js';
 import { getMirrorScales, getMirrorShops, upsertScales, upsertShops } from '../db/mirror.js';
 import { getSetting } from '../db/settings.js';
@@ -130,7 +130,7 @@ scalesRouter.get('/scales/:id', async (req: Request, res: Response, next: NextFu
   }
 });
 
-scalesRouter.post('/scales', async (req: Request, res: Response, next: NextFunction) => {
+scalesRouter.post('/scales', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = ScaleUpsertSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -144,7 +144,7 @@ scalesRouter.post('/scales', async (req: Request, res: Response, next: NextFunct
       });
       return;
     }
-    const { distributeImmediately, typeList, ...scaleUpdates } = parsed.data;
+    const scaleUpdates = parsed.data;
 
     // term_admin crea la balanza a partir de la entidad `TermInfo`. Las columnas
     // NOT NULL que el servicio no calcula se completan acá.
@@ -195,7 +195,7 @@ scalesRouter.post('/scales', async (req: Request, res: Response, next: NextFunct
   }
 });
 
-scalesRouter.put('/scales/:id', async (req: Request, res: Response, next: NextFunction) => {
+scalesRouter.put('/scales/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const termId = Number(req.params.id);
     if (!Number.isFinite(termId)) {
@@ -339,7 +339,7 @@ scalesRouter.put('/scales/:id', async (req: Request, res: Response, next: NextFu
   }
 });
 
-scalesRouter.delete('/scales/:id', async (req: Request, res: Response, next: NextFunction) => {
+scalesRouter.delete('/scales/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const termId = Number(req.params.id);
     // term_admin borra con DELETE /api/termInfo y el id en el body como array.
@@ -354,7 +354,7 @@ scalesRouter.delete('/scales/:id', async (req: Request, res: Response, next: Nex
   }
 });
 
-scalesRouter.post('/scales/discover', async (req: Request, res: Response, next: NextFunction) => {
+scalesRouter.post('/scales/discover', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = DiscoverSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -394,7 +394,7 @@ scalesRouter.post('/scales/discover', async (req: Request, res: Response, next: 
 });
 
 
-scalesRouter.post('/scales/distribute', async (req: Request, res: Response, next: NextFunction) => {
+scalesRouter.post('/scales/distribute', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = DistributeDataSchema.safeParse(req.body);
     if (!parsed.success) {

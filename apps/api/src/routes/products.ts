@@ -7,7 +7,7 @@ import {
   type PagedResponse,
   type Product,
 } from '@sdm/shared';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import {
   createShopGoodGroupRelations,
@@ -524,7 +524,7 @@ productsRouter.post(
   },
 );
 
-productsRouter.delete('/products', async (req: Request, res: Response, next: NextFunction) => {
+productsRouter.delete('/products', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = DeleteProductsSchema.safeParse(req.body);
     if (!parsed.success) {

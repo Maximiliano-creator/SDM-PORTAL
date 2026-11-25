@@ -19,6 +19,7 @@ import {
 import { apiClient } from '@/lib/queryClient';
 import { useDebounce } from '@/hooks/useDebounce';
 import { PriceEditSheet } from './catalog/PriceEditSheet';
+import { useAuthStore } from '@/store/auth';
 import { BulkPriceDialog } from './catalog/BulkPriceDialog';
 import {
   BulkDepartmentDialog,
@@ -32,6 +33,7 @@ function formatPrice(v: number | null | undefined): string {
 
 export function CatalogPage() {
   const qc = useQueryClient();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const [search, setSearch] = useState('');
   const [shopFilter, setShopFilter] = useState<string>('');
   const [priceModelFilter, setPriceModelFilter] = useState<string>('');
@@ -163,7 +165,7 @@ export function CatalogPage() {
               <Button variant="outline" onClick={() => setBulkDepartmentOpen(true)}>
                 Cambiar departamento
               </Button>
-              <Button
+              {isAdmin && <Button
                 variant="destructive"
                 disabled={bulkDeleteMut.isPending}
                 onClick={() => {
@@ -174,7 +176,7 @@ export function CatalogPage() {
               >
                 <Trash2 className="mr-1 h-4 w-4" />
                 {bulkDeleteMut.isPending ? 'Eliminando…' : 'Eliminar'}
-              </Button>
+              </Button>}
               <Button variant="ghost" onClick={() => setSelected(new Set())}>
                 Limpiar
               </Button>
@@ -346,7 +348,7 @@ export function CatalogPage() {
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button
+                    {isAdmin && <Button
                       size="icon"
                       variant="ghost"
                       title="Eliminar producto"
@@ -358,7 +360,7 @@ export function CatalogPage() {
                       }}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    </Button>}
                   </div>
                 </TableCell>
               </TableRow>

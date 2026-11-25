@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { logger } from '../logger.js';
 import { termRequest } from '../upstream/termAdmin.js';
 import { createShopGoodGroup, listShopGoodGroupRelations, listShopGoodGroups, listShopProductsByGoodCodes, normalizeProductGroupName, updateShopProductDepartment, } from '../upstream/productGroups.js';
@@ -156,7 +156,7 @@ productGroupsRouter.put('/product-groups/:id', async (req, res, next) => {
         next(error);
     }
 });
-productGroupsRouter.delete('/product-groups/:id', async (req, res, next) => {
+productGroupsRouter.delete('/product-groups/:id', requireAdmin, async (req, res, next) => {
     try {
         const id = Number(req.params.id);
         const shopId = ShopIdSchema.safeParse(req.body?.shopId);

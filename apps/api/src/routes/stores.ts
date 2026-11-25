@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest, UpstreamError } from '../upstream/termAdmin.js';
 import { upsertShops } from '../db/mirror.js';
 import { db } from '../db/client.js';
@@ -91,7 +91,7 @@ storesRouter.get('/stores/meta', async (_req: Request, res: Response, next: Next
 });
 
 // --- TIENDAS (shopInfo) ---
-storesRouter.post('/shops', async (req: Request, res: Response, next: NextFunction) => {
+storesRouter.post('/shops', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = req.body as Record<string, unknown>;
     const payload = {
@@ -125,7 +125,7 @@ storesRouter.post('/shops', async (req: Request, res: Response, next: NextFuncti
   }
 });
 
-storesRouter.put('/shops/:id', async (req: Request, res: Response, next: NextFunction) => {
+storesRouter.put('/shops/:id', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const shopId = Number(req.params.id);
     const allShops = await termRequest<Record<string, unknown>[]>('/api/shopInfo/all');
@@ -197,7 +197,7 @@ storesRouter.put('/shops/:id', async (req: Request, res: Response, next: NextFun
   }
 });
 
-storesRouter.delete('/shops', async (req: Request, res: Response, next: NextFunction) => {
+storesRouter.delete('/shops', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const ids = Array.isArray(req.body?.shopIds) ? req.body.shopIds.map(Number) : [];
     const upstream = await termRequest<unknown>('/api/shopInfo', {

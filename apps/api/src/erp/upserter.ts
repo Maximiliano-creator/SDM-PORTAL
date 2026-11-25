@@ -6,6 +6,7 @@ import type { ShopGoodsBase } from './mapErp.js';
 import { getSetting } from '../db/settings.js';
 
 const DEFAULT_CONCURRENCY = 4;
+const activeShopSyncs = new Set<number>();
 
 export interface UpsertOptions {
   concurrency?: number;
@@ -111,6 +112,25 @@ export async function upsertProducts(
   items: ShopGoodsBase[],
   opts: UpsertOptions = {},
 ): Promise<UpsertResult> {
+  const shopId = opts.shopId ?? items[0]?.shopId;
+  if (shopId === undefined) {
+    return performUpsertProducts(items, opts);
+  }
+  if (activeShopSyncs.has(shopId)) {
+    throw new Error('Ya hay una sincronización ERP en curso para esta tienda.');
+  }
+  activeShopSyncs.add(shopId);
+  try {
+    return await performUpsertProducts(items, opts);
+  } finally {
+    activeShopSyncs.delete(shopId);
+  }
+}
+
+async function performUpsertProducts(
+  items: ShopGoodsBase[],
+  opts: UpsertOptions = {},
+): Promise<UpsertResult> {
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
   const maxRetries = opts.maxRetries ?? Number(getSetting('erp.max_retries') ?? '3');
   const retryBaseMs = opts.retryBaseMs ?? Number(getSetting('erp.retry_base_ms') ?? '500');
@@ -155,7 +175,12 @@ export async function upsertProducts(
 
   // Borrado de faltantes cuando mode === 'full' (con salvaguarda: nunca vaciar con lote vacío)
   const targetShopId = opts.shopId ?? items[0]?.shopId;
-  if (opts.mode === 'full' && targetShopId !== undefined && items.length > 0) {
+  if (
+    opts.mode === 'full' &&
+    targetShopId !== undefined &&
+    items.length > 0 &&
+    result.failed === 0
+  ) {
     const incomingPlus = new Set(items.map((it) => String(it.goodsPlu)));
     try {
       const currentProducts = await listAllShopProducts(targetShopId);
@@ -181,6 +206,12 @@ export async function upsertProducts(
       result.errors.push({ row: 0, plu: '*', error: `Error al eliminar faltantes en mode full: ${msg}` });
       logger.warn({ shopId: targetShopId, error: msg }, 'ERP full sync delete step failed');
     }
+  } else if (opts.mode === 'full' && result.failed > 0) {
+    result.errors.push({
+      row: 0,
+      plu: '*',
+      error: 'Se omitió el borrado de faltantes porque hubo productos fallidos en el lote.',
+    });
   }
 
   return result;

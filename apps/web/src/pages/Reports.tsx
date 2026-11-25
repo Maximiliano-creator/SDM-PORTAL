@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { ClipboardList, LineChart, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/auth';
 
 const tabs = [
   { to: '/reportes/ventas', label: 'Ventas', icon: Receipt },
@@ -10,6 +11,7 @@ const tabs = [
 
 export function ReportsLayout() {
   const location = useLocation();
+  const isAdmin = useAuthStore((state) => state.user?.role === 'admin');
   const isIndex = location.pathname === '/reportes' || location.pathname === '/reportes/';
   return (
     <div className="space-y-6">
@@ -20,7 +22,7 @@ export function ReportsLayout() {
         </p>
       </div>
       <div className="flex gap-2 border-b">
-        {tabs.map((t) => {
+        {tabs.filter((tab) => tab.to !== '/reportes/auditoria' || isAdmin).map((t) => {
           const active =
             location.pathname === t.to ||
             (isIndex && t.to === '/reportes/ventas');

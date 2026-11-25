@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { requireAuth } from '../auth/middleware.js';
+import { requireAdmin, requireAuth } from '../auth/middleware.js';
 import { termRequest, UpstreamError } from '../upstream/termAdmin.js';
 import { upsertShops } from '../db/mirror.js';
 import { db } from '../db/client.js';
@@ -71,7 +71,7 @@ storesRouter.get('/stores/meta', async (_req, res, next) => {
     }
 });
 // --- TIENDAS (shopInfo) ---
-storesRouter.post('/shops', async (req, res, next) => {
+storesRouter.post('/shops', requireAdmin, async (req, res, next) => {
     try {
         const body = req.body;
         const payload = {
@@ -104,7 +104,7 @@ storesRouter.post('/shops', async (req, res, next) => {
         next(err);
     }
 });
-storesRouter.put('/shops/:id', async (req, res, next) => {
+storesRouter.put('/shops/:id', requireAdmin, async (req, res, next) => {
     try {
         const shopId = Number(req.params.id);
         const allShops = await termRequest('/api/shopInfo/all');
@@ -169,7 +169,7 @@ storesRouter.put('/shops/:id', async (req, res, next) => {
         next(err);
     }
 });
-storesRouter.delete('/shops', async (req, res, next) => {
+storesRouter.delete('/shops', requireAdmin, async (req, res, next) => {
     try {
         const ids = Array.isArray(req.body?.shopIds) ? req.body.shopIds.map(Number) : [];
         const upstream = await termRequest('/api/shopInfo', {

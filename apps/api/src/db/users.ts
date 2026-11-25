@@ -1,6 +1,7 @@
 import argon2 from 'argon2';
 import { db } from './client.js';
 import { logger } from '../logger.js';
+import { config } from '../config.js';
 import type { User } from '@sdm/shared';
 
 interface UserRow {
@@ -95,17 +96,26 @@ export async function updateUserCredentials(
       .get(passwordHash, id);
   }
   if (!row) throw new Error('Usuario no encontrado');
+  db.prepare(
+    "UPDATE auth_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+  ).run(Date.now(), id);
   return rowToUser(row);
 }
 
 export async function ensureSeedAdmin(): Promise<void> {
   const count = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
   if (count > 0) return;
+  if (!config.initialAdminPassword) {
+    throw new Error(
+      'No hay usuarios configurados. Define INITIAL_ADMIN_PASSWORD (mínimo 12 caracteres) para crear el primer administrador.',
+    );
+  }
   const username = 'admin';
-  const password = 'admin';
-  await createUser({ username, password, fullName: 'Administrador', role: 'admin' });
-  logger.warn(
-    { username, password },
-    'Usuario admin inicial creado. CAMBIA LA CONTRASEÑA en el primer login.',
-  );
+  await createUser({
+    username,
+    password: config.initialAdminPassword,
+    fullName: 'Administrador',
+    role: 'admin',
+  });
+  logger.warn({ username }, 'Cuenta inicial de administrador creada; elimina INITIAL_ADMIN_PASSWORD del entorno.');
 }

@@ -1,3 +1,9 @@
 node_modules
-apps/api/data/app.db
-apps/api/data/app.db-wal
+.env
+.env.*
+!.env.example
+**/data/
+**/.jwt-secret
+*.db
+*.db-shm
+*.db-wal
