@@ -59,9 +59,21 @@ pnpm dev # Levanta apps/web y apps/api en paralelo
 
 | Servicio | URL Local | Observaciones |
 | :--- | :--- | :--- |
-| **Web (Frontend)** | `http://localhost:5173` | Puerto por defecto de Vite |
+| **Web (Frontend)** | `http://localhost:5173` | Puerto por defecto de Vite; escucha solo en localhost por defecto |
 | **API & WebSocket VNC** | `http://localhost:8788` | Configurable a `8080` según `.env` |
 | **BLS `term_admin`** | `http://localhost:19697` | Servicio base upstream |
+
+Para una demo temporal desde otro equipo de la misma red, habilita el acceso LAN
+antes de iniciar Vite:
+
+```powershell
+$env:SDM_PORTAL_LISTEN_HOST = '0.0.0.0'
+pnpm dev
+```
+
+Luego usa `http://<IP-privada-del-servidor>:5173` y permite TCP 5173 solo en el
+perfil **Privado** del Firewall de Windows. Sin esa variable, Vite queda limitado
+a localhost. No publiques directamente los puertos de API ni de `term_admin`.
 
 ---
 
